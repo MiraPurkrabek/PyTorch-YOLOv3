@@ -1,1 +1,5 @@
-data/custom/images/frame00000.jpg
+data/custom/images/frame00000.txt
+data/custom/images/frame00010.txt
+data/custom/images/frame00020.txt
+data/custom/images/frame00030.txt
+data/custom/images/frame00040.txt
