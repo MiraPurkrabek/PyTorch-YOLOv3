@@ -71,6 +71,11 @@ def create_modules(module_defs):
             anchors = [int(x) for x in module_def["anchors"].split(",")]
             anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
             anchors = [anchors[i] for i in anchor_idxs]
+            print("--------------------------------------")
+            print('module_def["classes"] =', end='')
+            module_def["classes"] = '4'
+            print('\nmodule_def["classes"] =', module_def["classes"])
+            print("--------------------------------------")
             num_classes = int(module_def["classes"])
             img_size = int(hyperparams["height"])
             # Define detection layer
