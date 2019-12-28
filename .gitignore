@@ -11,3 +11,6 @@ weights/*.weights
 weights/*.74
 __pycache__
 checkpoints
+*.txt
+*.jpg
+*.png
