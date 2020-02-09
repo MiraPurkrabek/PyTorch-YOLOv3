@@ -21,6 +21,25 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.ticker import NullLocator
 
+
+def saveDetections(dets, path, size):
+    #size = [1, 1]
+    #print(size)
+    name = path.split("/")[-1].split(".")[0]
+    name = "output/"+name+".txt"
+    f = open(name, 'w')
+    for bb in dets:
+        a = bb[0]
+        b = bb[1]
+        c = bb[2]
+        d = bb[3]
+        w = c-a
+        h = d-b
+        cx = a+w/2
+        cy = b+h/2
+        f.write("{:d} {:f} {:f} {:f} {:f}\n".format(int(bb[-1]), cx/size[1], cy/size[0], w/size[1], h/size[0]))
+    f.close()
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--image_folder", type=str, default="data/samples", help="path to dataset")
@@ -29,10 +48,11 @@ if __name__ == "__main__":
     parser.add_argument("--class_path", type=str, default="data/coco.names", help="path to class label file")
     parser.add_argument("--conf_thres", type=float, default=0.8, help="object confidence threshold")
     parser.add_argument("--nms_thres", type=float, default=0.4, help="iou thresshold for non-maximum suppression")
-    parser.add_argument("--batch_size", type=int, default=1, help="size of the batches")
+    parser.add_argument("--batch_size", type=int, default=10, help="size of the batches")
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
+    parser.add_argument("--save_images", type=bool, default=False, help="flag if saving images with detections")
     opt = parser.parse_args()
     print(opt)
 
@@ -95,49 +115,64 @@ if __name__ == "__main__":
     # Iterate through images and save plot of detections
     for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
 
-        print("(%d) Image: '%s'" % (img_i, path))
+        print("({:02d}) Image: '{:s}'".format(img_i, path))
 
-        # Create plot
-        img = np.array(Image.open(path))
-        plt.figure()
-        fig, ax = plt.subplots(1)
-        ax.imshow(img)
 
         # Draw bounding boxes and labels of detections
         if detections is not None:
+            img = np.array(Image.open(path))
+
             # Rescale boxes to original image
             detections = rescale_boxes(detections, opt.img_size, img.shape[:2])
-            unique_labels = detections[:, -1].cpu().unique()
-            n_cls_preds = len(unique_labels)
-            bbox_colors = random.sample(colors, n_cls_preds)
-            for x1, y1, x2, y2, conf, cls_conf, cls_pred in detections:
+            
+            # Save detections into .txt file
+            saveDetections(detections, path, img.shape)
+            
+            if opt.save_images:
+                
+                # Create plot
+                plt.figure()
+                fig, ax = plt.subplots(1)
+                ax.imshow(img)
 
-                if cls_conf.item() > 0.8:
+                unique_labels = detections[:, -1].cpu().unique()
+                n_cls_preds = len(unique_labels)
+                bbox_colors = random.sample(colors, n_cls_preds)
+                bbox_colors = [[1, 0, 0],
+                                [0, 0, 1],
+                                [0, 1, 0],
+                                [1, 1, 0]]
+                for x1, y1, x2, y2, conf, cls_conf, cls_pred in detections:
+
+                    if cls_conf.item() > 0.8:
                     
-                    print("\t+ Label: %s, Conf: %.5f" % (classes[int(cls_pred)], cls_conf.item()))
+                        print("\t+ Label: %s, Conf: %.5f" % (classes[int(cls_pred)], cls_conf.item()))
 
-                    box_w = x2 - x1
-                    box_h = y2 - y1
+                        box_w = max(x2 - x1, 20)
+                        box_h = max(y2 - y1, 20)
 
-                    color = bbox_colors[int(np.where(unique_labels == int(cls_pred))[0])]
-                    # Create a Rectangle patch
-                    bbox = patches.Rectangle((x1, y1), box_w, box_h, linewidth=2, edgecolor=color, facecolor="none")
-                    # Add the bbox to the plot
-                    ax.add_patch(bbox)
-                    # Add label
-                    #plt.text(
-                    #    x1,
-                    #    y1,
-                    #    s=classes[int(cls_pred)],
-                    #    color="white",
-                    #    verticalalignment="top",
-                    #    bbox={"color": color, "pad": 0},
-                    #)
+                        color = bbox_colors[int(np.where(unique_labels == int(cls_pred))[0])]
+                        # Create a Rectangle patch
+                        bbox = patches.Rectangle((x1, y1), box_w, box_h, linewidth=2, edgecolor=color, facecolor="none")
+                        # Add the bbox to the plot
+                        ax.add_patch(bbox)
+                        # Add label
+                        #plt.text(
+                        #    x1,
+                        #    y1,
+                        #    s=classes[int(cls_pred)],
+                        #    color="white",
+                        #    verticalalignment="top",
+                        #    bbox={"color": color, "pad": 0},
+                        #)
 
-        # Save generated image with detections
-        plt.axis("off")
-        plt.gca().xaxis.set_major_locator(NullLocator())
-        plt.gca().yaxis.set_major_locator(NullLocator())
-        filename = path.split("/")[-1].split(".")[0]
-        plt.savefig("output/{}.png".format(filename), bbox_inches="tight", pad_inches=0.0)
-        plt.close()
+
+        if opt.save_images:
+            # Save generated image with detections
+            plt.axis("off")
+            plt.gca().xaxis.set_major_locator(NullLocator())
+            plt.gca().yaxis.set_major_locator(NullLocator())
+            filename = path.split("/")[-1].split(".")[0]
+            plt.savefig("output/{}.png".format(filename), bbox_inches="tight", pad_inches=0.0)
+        
+            plt.close()

@@ -1,0 +1,4 @@
+classes= 4
+train=data/dataset/train.txt
+valid=data/dataset/valid.txt
+names=data/dataset/classes.names
