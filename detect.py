@@ -22,22 +22,23 @@ import matplotlib.patches as patches
 from matplotlib.ticker import NullLocator
 
 
-def saveDetections(dets, path, size):
+def saveDetections(dets, path, size, thresh):
     #size = [1, 1]
     #print(size)
     name = path.split("/")[-1].split(".")[0]
     name = "output/"+name+".txt"
     f = open(name, 'w')
     for bb in dets:
-        a = bb[0]
-        b = bb[1]
-        c = bb[2]
-        d = bb[3]
-        w = c-a
-        h = d-b
-        cx = a+w/2
-        cy = b+h/2
-        f.write("{:d} {:f} {:f} {:f} {:f}\n".format(int(bb[-1]), cx/size[1], cy/size[0], w/size[1], h/size[0]))
+        if bb[-2] > thresh:
+            a = bb[0]
+            b = bb[1]
+            c = bb[2]
+            d = bb[3]
+            w = c-a
+            h = d-b
+            cx = a+w/2
+            cy = b+h/2
+            f.write("{:d} {:f} {:f} {:f} {:f} {:f}\n".format(int(bb[-1]), cx/size[1], cy/size[0], w/size[1], h/size[0], bb[-2]))
     f.close()
 
 if __name__ == "__main__":
@@ -126,7 +127,7 @@ if __name__ == "__main__":
             detections = rescale_boxes(detections, opt.img_size, img.shape[:2])
             
             # Save detections into .txt file
-            saveDetections(detections, path, img.shape)
+            saveDetections(detections, path, img.shape, opt.conf_thres)
             
             if opt.save_images:
                 
