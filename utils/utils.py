@@ -232,10 +232,20 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
     """
 
     # From (center x, center y, width, height) to (x1, y1, x2, y2)
+    #print("Predictions size", prediction.size())
     prediction[..., :4] = xywh2xyxy(prediction[..., :4])
     output = [None for _ in range(len(prediction))]
+    indices = [None for _ in range(len(prediction))]
     for image_i, image_pred in enumerate(prediction):
         # Filter out confidence scores below threshold
+        v0 = np.arange(0, 13**2 * 3)
+        v1 = np.arange(13**2 * 3, (13**2 + 26**2) * 3)
+        v2 = np.arange((13**2 + 26**2) * 3, (13**2 + 26**2 + 52**2) * 3)
+        v = np.concatenate((v0, v1, v2), axis=0)
+        torch_v = torch.from_numpy(v)
+        torch_v = torch_v[image_pred[:, 4] >= conf_thres]
+        #print("image_pred indexes")
+        #print(torch_v)
         image_pred = image_pred[image_pred[:, 4] >= conf_thres]
         # If none are remaining => process next image
         if not image_pred.size(0):
@@ -246,22 +256,39 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
         image_pred = image_pred[(-score).argsort()]
         class_confs, class_preds = image_pred[:, 5:].max(1, keepdim=True)
         detections = torch.cat((image_pred[:, :5], class_confs.float(), class_preds.float()), 1)
+        #print("Detections size", detections.size())
         # Perform non-maximum suppression
         keep_boxes = []
+        keep_boxes_idx = []
         while detections.size(0):
             large_overlap = bbox_iou(detections[0, :4].unsqueeze(0), detections[:, :4]) > nms_thres
+            huge_overlap = bbox_iou(detections[0, :4].unsqueeze(0), detections[:, :4]) > 0.6
             label_match = detections[0, -1] == detections[:, -1]
+            '''
+            if int(detections[0, -1]) < 1e-5:
+                both_players = detections[:, -1] == 1
+            elif int(detections[0, -1]) - 1 < 1e-5:
+                both_players = detections[:, -1] == 0
+            else:
+                both_players = torch.BoolTensor([False for _ in range (detections.size(0))])
+            '''
             # Indices of boxes with lower confidence scores, large IOUs and matching labels
-            invalid = large_overlap & label_match
+            #invalid = large_overlap & (label_match | both_players)
+            invalid = (large_overlap & label_match) | huge_overlap
             weights = detections[invalid, 4:5]
             # Merge overlapping bboxes by order of confidence
             detections[0, :4] = (weights * detections[invalid, :4]).sum(0) / weights.sum()
-            keep_boxes += [detections[0]]
+            keep_boxes += [torch.cat([detections[0], torch.Tensor([torch_v[0]])], 0)]
+            keep_boxes_idx += [torch_v[0]]
             detections = detections[~invalid]
+            torch_v = torch_v[~invalid]
         if keep_boxes:
             output[image_i] = torch.stack(keep_boxes)
+            indices[image_i] = keep_boxes_idx
+            #print("Keeping", output[image_i].size())
+            #print(keep_boxes)
 
-    return output
+    return output, indices
 
 
 def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):

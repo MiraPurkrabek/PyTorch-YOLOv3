@@ -53,7 +53,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
-    parser.add_argument("--save_images", type=bool, default=False, help="flag if saving images with detections")
+    parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
     opt = parser.parse_args()
     print(opt)
 
@@ -95,8 +95,31 @@ if __name__ == "__main__":
 
         # Get detections
         with torch.no_grad():
-            detections = model(input_imgs)
-            detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            (detections, all_vectors) = model(input_imgs)
+            (detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            
+        # Reshape vectors to correspond to indices
+        for i in range(len(all_vectors)):
+            all_vectors[i] = all_vectors[i].reshape(2, int(1024/2**i), int(13*(2**i)*13*(2**i)))
+
+        # Keep only valid vectors
+        #print(indices)
+        vectors = [None for _ in range(len(indices))]
+        for image_i in range(len(indices)):
+            tmp_vectors = []
+            for idx in indices[image_i]:
+                idx = int( (int(idx)-1)/3 )
+                if idx < 13**2:
+                    anchor = 0
+                elif idx < 26**2:
+                    anchor = 1
+                    idx -= 13**2
+                else:
+                    idx -= (13**2+26**2)
+                    anchor = 2
+                print("Image {:d}, keeping vector {:d} from anchor {:d}".format(image_i, idx, anchor))
+                tmp_vectors += [all_vectors[anchor][image_i, ..., idx]]
+            print("-----")
 
         # Log progress
         current_time = time.time()
@@ -136,15 +159,15 @@ if __name__ == "__main__":
                 fig, ax = plt.subplots(1)
                 ax.imshow(img)
 
-                unique_labels = detections[:, -1].cpu().unique()
+                unique_labels = detections[:, -2].cpu().unique()
                 n_cls_preds = len(unique_labels)
                 bbox_colors = random.sample(colors, n_cls_preds)
                 bbox_colors = [[1, 0, 0],
                                 [0, 0, 1],
                                 [0, 1, 0],
                                 [1, 1, 0]]
-                for x1, y1, x2, y2, conf, cls_conf, cls_pred in detections:
-
+                for x1, y1, x2, y2, conf, cls_conf, cls_pred, ID in detections:
+                    
                     if cls_conf.item() > 0.8:
                     
                         print("\t+ Label: %s, Conf: %.5f" % (classes[int(cls_pred)], cls_conf.item()))
@@ -158,14 +181,21 @@ if __name__ == "__main__":
                         # Add the bbox to the plot
                         ax.add_patch(bbox)
                         # Add label
-                        #plt.text(
-                        #    x1,
-                        #    y1,
-                        #    s=classes[int(cls_pred)],
-                        #    color="white",
-                        #    verticalalignment="top",
-                        #    bbox={"color": color, "pad": 0},
-                        #)
+                        if int(ID) < 13**2 * 3:
+                            anchor = 13
+                        elif int(ID) < (13**2 + 26**2) * 3:
+                            anchor = 26
+                        else:
+                            anchor = 52
+                        plt.text(
+                            x1,
+                            y1,
+                            s="{:d}".format(anchor),
+                            #s=classes[int(cls_pred)],
+                            color="black",
+                            verticalalignment="top",
+                            bbox={"color": color, "pad": 0},
+                        )
 
 
         if opt.save_images:

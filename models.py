@@ -252,6 +252,7 @@ class Darknet(nn.Module):
         img_dim = x.shape[2]
         loss = 0
         layer_outputs, yolo_outputs = [], []
+        vectors = []
         for i, (module_def, module) in enumerate(zip(self.module_defs, self.module_list)):
             if module_def["type"] in ["convolutional", "upsample", "maxpool"]:
                 x = module(x)
@@ -261,12 +262,24 @@ class Darknet(nn.Module):
                 layer_i = int(module_def["from"])
                 x = layer_outputs[-1] + layer_outputs[layer_i]
             elif module_def["type"] == "yolo":
+                print("====== Running YOLO layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
                 x, layer_loss = module[0](x, targets, img_dim)
+                #print("\tOutput from this layer has len {:f}, {:f}, {:f}".format(len(x), len(x[0]), len(x[0][0])))
+                #print("\tOutput from prev layer has len {:f}, {:f}, {:f}".format(len(layer_outputs[-1]), len(layer_outputs[-1][0]), len(layer_outputs[-1][0][0])))
+                vectors.append(layer_outputs[i-2])
+                #print(layer_outputs[-1][0][0])
                 loss += layer_loss
+                #if i is not 106:
                 yolo_outputs.append(x)
+                #print(vectors)
             layer_outputs.append(x)
+        #for i in range(len(vectors)):
+        #    print(len(vectors), vectors[i].size())
+        #print(yolo_outputs)
+        #print("Targets:", targets)
         yolo_outputs = to_cpu(torch.cat(yolo_outputs, 1))
-        return yolo_outputs if targets is None else (loss, yolo_outputs)
+        print("========= Detection done =========\n")
+        return (yolo_outputs, vectors) if targets is None else (loss, yolo_outputs)
 
     def load_darknet_weights(self, weights_path):
         """Parses and loads the weights stored in 'weights_path'"""
