@@ -288,7 +288,8 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
             #print("Keeping", output[image_i].size())
             #print(keep_boxes)
 
-    return output, indices
+    return output
+    #return output, indices
 
 
 def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
