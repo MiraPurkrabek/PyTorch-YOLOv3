@@ -262,7 +262,7 @@ class Darknet(nn.Module):
                 layer_i = int(module_def["from"])
                 x = layer_outputs[-1] + layer_outputs[layer_i]
             elif module_def["type"] == "yolo":
-                print("====== Running YOLO layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
+                #print("====== Running YOLO layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
                 x, layer_loss = module[0](x, targets, img_dim)
                 #print("\tOutput from this layer has len {:f}, {:f}, {:f}".format(len(x), len(x[0]), len(x[0][0])))
                 #print("\tOutput from prev layer has len {:f}, {:f}, {:f}".format(len(layer_outputs[-1]), len(layer_outputs[-1][0]), len(layer_outputs[-1][0][0])))
@@ -278,7 +278,7 @@ class Darknet(nn.Module):
         #print(yolo_outputs)
         #print("Targets:", targets)
         yolo_outputs = to_cpu(torch.cat(yolo_outputs, 1))
-        print("========= Detection done =========\n")
+        #print("========= Detection done =========\n")
         return (yolo_outputs, vectors) if targets is None else (loss, yolo_outputs)
 
     def load_darknet_weights(self, weights_path):

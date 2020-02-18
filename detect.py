@@ -53,7 +53,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
-    parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
+    parser.add_argument("--save_images", type=bool, default=False, help="flag if saving images with detections")
     opt = parser.parse_args()
     print(opt)
 
@@ -97,10 +97,11 @@ if __name__ == "__main__":
         with torch.no_grad():
             (detections, all_vectors) = model(input_imgs)
             (detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
-            
+
+        '''    
         # Reshape vectors to correspond to indices
         for i in range(len(all_vectors)):
-            all_vectors[i] = all_vectors[i].reshape(2, int(1024/2**i), int(13*(2**i)*13*(2**i)))
+            all_vectors[i] = all_vectors[i].reshape(opt.batch_size, int(1024/2**i), int(13*(2**i)*13*(2**i)))
 
         # Keep only valid vectors
         #print(indices)
@@ -120,6 +121,7 @@ if __name__ == "__main__":
                 print("Image {:d}, keeping vector {:d} from anchor {:d}".format(image_i, idx, anchor))
                 tmp_vectors += [all_vectors[anchor][image_i, ..., idx]]
             print("-----")
+        '''
 
         # Log progress
         current_time = time.time()
