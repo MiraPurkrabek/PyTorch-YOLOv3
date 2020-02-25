@@ -104,7 +104,7 @@ if __name__ == "__main__":
         '''    
         # Reshape vectors to correspond to indices
         for i in range(len(all_vectors)):
-            all_vectors[i] = all_vectors[i].reshape(opt.batch_size, int(1024/2**i), int(13*(2**i)*13*(2**i)))
+            all_vectors[i] = all_vectors[i].reshape(2, int(1024/2**i), int(13*(2**i)*13*(2**i)))
 
         # Keep only valid vectors
         #print(indices)
@@ -124,7 +124,6 @@ if __name__ == "__main__":
                 print("Image {:d}, keeping vector {:d} from anchor {:d}".format(image_i, idx, anchor))
                 tmp_vectors += [all_vectors[anchor][image_i, ..., idx]]
             print("-----")
-        '''
 
         # Log progress
         current_time = time.time()
