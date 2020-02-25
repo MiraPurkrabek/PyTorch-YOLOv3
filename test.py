@@ -36,10 +36,20 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
     for batch_i, (_, imgs, targets) in enumerate(tqdm.tqdm(dataloader, desc="Detecting objects")):
 
         # Extract labels
-        labels += targets[:, 1].tolist()
+        #labels += targets[:, 1].tolist()
+        #print("targets:", targets)
+        #print("targets:", targets[:, 1:-4])
+        #try:
+        #    print("labels?:", np.where(targets[:, 1:5] == 1)[1])
+        #except ValueError:
+        #    print("Empty vector")
+
+        labels += (np.where(targets[:, 1:5] == 1)[1]).tolist()
+        #print("labels:", labels)
+        #print("labels list:", labels.tolist())
         # Rescale target
-        targets[:, 2:] = xywh2xyxy(targets[:, 2:])
-        targets[:, 2:] *= img_size
+        targets[:, 6:] = xywh2xyxy(targets[:, 6:])
+        targets[:, 6:] *= img_size
 
         imgs = Variable(imgs.type(Tensor), requires_grad=False)
 
@@ -55,7 +65,13 @@ def evaluate(model, path, iou_thres, conf_thres, nms_thres, img_size, batch_size
     # Concatenate sample statistics
     if len(sample_metrics) > 0:
         true_positives, pred_scores, pred_labels = [np.concatenate(x, 0) for x in list(zip(*sample_metrics))]
+        #print("tp", true_positives)
+        #print("scores", pred_scores)
+        #print("pred_labels", pred_labels)
+        #print("labels", labels)
         precision, recall, AP, f1, ap_class = ap_per_class(true_positives, pred_scores, pred_labels, labels)
+        #print("AP", AP)
+        #print("ap_class", ap_class)
         assert len(ap_class) == len(AP)
     else:
         ap_class = np.unique(labels).astype("int32")

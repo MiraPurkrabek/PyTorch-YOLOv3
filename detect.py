@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.ticker import NullLocator
 
+import copy
 
 def saveDetections(dets, path, size, thresh):
     #size = [1, 1]
@@ -47,13 +48,13 @@ if __name__ == "__main__":
     parser.add_argument("--model_def", type=str, default="config/yolov3.cfg", help="path to model definition file")
     parser.add_argument("--weights_path", type=str, default="weights/yolov3.weights", help="path to weights file")
     parser.add_argument("--class_path", type=str, default="data/coco.names", help="path to class label file")
-    parser.add_argument("--conf_thres", type=float, default=0.8, help="object confidence threshold")
+    parser.add_argument("--conf_thres", type=float, default=0.6, help="object confidence threshold")
     parser.add_argument("--nms_thres", type=float, default=0.4, help="iou thresshold for non-maximum suppression")
     parser.add_argument("--batch_size", type=int, default=10, help="size of the batches")
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
-    parser.add_argument("--save_images", type=bool, default=False, help="flag if saving images with detections")
+    parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
     opt = parser.parse_args()
     print(opt)
 
@@ -95,8 +96,10 @@ if __name__ == "__main__":
 
         # Get detections
         with torch.no_grad():
-            (detections, all_vectors) = model(input_imgs)
-            (detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            #(detections, all_vectors) = model(input_imgs)
+            #(detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            detections = model(input_imgs)
+            detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
 
         '''    
         # Reshape vectors to correspond to indices
@@ -147,7 +150,7 @@ if __name__ == "__main__":
         # Draw bounding boxes and labels of detections
         if detections is not None:
             img = np.array(Image.open(path))
-
+            
             # Rescale boxes to original image
             detections = rescale_boxes(detections, opt.img_size, img.shape[:2])
             
@@ -161,25 +164,59 @@ if __name__ == "__main__":
                 fig, ax = plt.subplots(1)
                 ax.imshow(img)
 
-                unique_labels = detections[:, -2].cpu().unique()
+                unique_labels = detections[:, 6].cpu().unique()
                 n_cls_preds = len(unique_labels)
                 bbox_colors = random.sample(colors, n_cls_preds)
                 bbox_colors = [[1, 0, 0],
                                 [0, 0, 1],
                                 [0, 1, 0],
-                                [1, 1, 0]]
-                for x1, y1, x2, y2, conf, cls_conf, cls_pred, ID in detections:
+                                [1, 1, 0],
+                                [0.5, 0.5, 0.5]]
+                for x1, y1, x2, y2, conf, cls_conf, cls_pred, humaness, ID in detections:
                     
                     if cls_conf.item() > 0.8:
                     
-                        print("\t+ Label: %s, Conf: %.5f" % (classes[int(cls_pred)], cls_conf.item()))
+                        print("\t+ Label: %s, Conf: %.5f, Human: %.5f" % (classes[int(cls_pred)], cls_conf.item(), humaness.item()))
 
                         box_w = max(x2 - x1, 20)
                         box_h = max(y2 - y1, 20)
 
                         color = bbox_colors[int(np.where(unique_labels == int(cls_pred))[0])]
                         # Create a Rectangle patch
-                        bbox = patches.Rectangle((x1, y1), box_w, box_h, linewidth=2, edgecolor=color, facecolor="none")
+                        bbox = patches.Rectangle((x1, y1), box_w, box_h, linewidth=1, edgecolor=color, facecolor="none")
+                        # Add the bbox to the plot
+                        ax.add_patch(bbox)
+                        # Add label
+                        if int(ID) < 13**2 * 3:
+                            anchor = 13
+                        elif int(ID) < (13**2 + 26**2) * 3:
+                            anchor = 26
+                        else:
+                            anchor = 52
+                        plt.text(
+                            x1,
+                            y1,
+                            s="{:d}".format(anchor),
+                            #s=classes[int(cls_pred)],
+                            color="black",
+                            verticalalignment="top",
+                            bbox={"color": color, "pad": 0},
+                        )
+                    else:
+                        #print(x1, y1, x2, y2, conf, cls_conf, cls_pred, humaness, ID)
+
+                        print("\to Label: %s, Conf: %.5f, Human: %.5f" % (classes[int(cls_pred)], cls_conf.item(), humaness.item()))
+
+                        box_w = max(x2 - x1, 20)
+                        box_h = max(y2 - y1, 20)
+
+                        original_color = bbox_colors[int(np.where(unique_labels == int(cls_pred))[0])]
+                        color = copy.copy(original_color)
+                        for i in range(len(color)):
+                            color[i] *= 0.5
+                            color[i] += 0.5
+                        # Create a Rectangle patch
+                        bbox = patches.Rectangle((x1, y1), box_w, box_h, linewidth=1, edgecolor=color, facecolor="none")
                         # Add the bbox to the plot
                         ax.add_patch(bbox)
                         # Add label

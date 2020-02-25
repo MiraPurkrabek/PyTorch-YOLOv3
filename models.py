@@ -193,6 +193,9 @@ class YOLOLayer(nn.Module):
                 ignore_thres=self.ignore_thres,
             )
 
+            #print("pred_cls[obj_mask]:", pred_cls[obj_mask])
+            #print("tcls[obj_mask]:", tcls[obj_mask])
+
             # Loss : Mask outputs to ignore non-existing objects (except with conf. loss)
             loss_x = self.mse_loss(x[obj_mask], tx[obj_mask])
             loss_y = self.mse_loss(y[obj_mask], ty[obj_mask])
@@ -203,7 +206,8 @@ class YOLOLayer(nn.Module):
             loss_conf = self.obj_scale * loss_conf_obj + self.noobj_scale * loss_conf_noobj
             loss_cls = self.bce_loss(pred_cls[obj_mask], tcls[obj_mask])
             total_loss = loss_x + loss_y + loss_w + loss_h + loss_conf + loss_cls
-
+            total_loss = loss_x + loss_y + loss_w + loss_h + loss_conf + 10*loss_cls
+            
             # Metrics
             cls_acc = 100 * class_mask[obj_mask].mean()
             conf_obj = pred_conf[obj_mask].mean()
@@ -264,6 +268,8 @@ class Darknet(nn.Module):
             elif module_def["type"] == "yolo":
                 #print("====== Running YOLO layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
                 x, layer_loss = module[0](x, targets, img_dim)
+                #print(module[0])
+                #print(layer_loss)
                 #print("\tOutput from this layer has len {:f}, {:f}, {:f}".format(len(x), len(x[0]), len(x[0][0])))
                 #print("\tOutput from prev layer has len {:f}, {:f}, {:f}".format(len(layer_outputs[-1]), len(layer_outputs[-1][0]), len(layer_outputs[-1][0][0])))
                 vectors.append(layer_outputs[i-2])
