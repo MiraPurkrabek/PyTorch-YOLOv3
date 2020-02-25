@@ -73,7 +73,7 @@ def create_modules(module_defs):
             anchors = [anchors[i] for i in anchor_idxs]
             #print("--------------------------------------")
             #print('module_def["classes"] =', end='')
-            module_def["classes"] = '4'
+            #module_def["classes"] = '5'
             #print('\nmodule_def["classes"] =', module_def["classes"])
             #print("--------------------------------------")
             num_classes = int(module_def["classes"])
@@ -279,7 +279,8 @@ class Darknet(nn.Module):
         #print("Targets:", targets)
         yolo_outputs = to_cpu(torch.cat(yolo_outputs, 1))
         #print("========= Detection done =========\n")
-        return (yolo_outputs, vectors) if targets is None else (loss, yolo_outputs)
+        return yolo_outputs if targets is None else (loss, yolo_outputs)
+        #return (yolo_outputs, vectors) if targets is None else (loss, yolo_outputs)
 
     def load_darknet_weights(self, weights_path):
         """Parses and loads the weights stored in 'weights_path'"""

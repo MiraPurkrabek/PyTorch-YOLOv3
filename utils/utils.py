@@ -254,7 +254,12 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
         score = image_pred[:, 4] * image_pred[:, 5:].max(1)[0]
         # Sort by it
         image_pred = image_pred[(-score).argsort()]
-        class_confs, class_preds = image_pred[:, 5:].max(1, keepdim=True)
+        class_confs, class_preds = image_pred[:, 5:-1].max(1, keepdim=True)
+        idxs = (class_confs < 0.7).reshape(-1)
+        #if torch.any(idxs):
+        #    print(idxs)
+        class_confs[idxs] = (image_pred[idxs, -1]).reshape(-1, 1)
+        class_preds[idxs] = 4
         detections = torch.cat((image_pred[:, :5], class_confs.float(), class_preds.float()), 1)
         #print("Detections size", detections.size())
         # Perform non-maximum suppression
@@ -288,7 +293,8 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
             #print("Keeping", output[image_i].size())
             #print(keep_boxes)
 
-    return output, indices
+    return output
+    #return output, indices
 
 
 def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):

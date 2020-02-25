@@ -53,7 +53,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
-    parser.add_argument("--save_images", type=bool, default=False, help="flag if saving images with detections")
+    parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
     opt = parser.parse_args()
     print(opt)
 
@@ -95,8 +95,10 @@ if __name__ == "__main__":
 
         # Get detections
         with torch.no_grad():
-            (detections, all_vectors) = model(input_imgs)
-            (detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            detections = model(input_imgs)
+            detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            #(detections, all_vectors) = model(input_imgs)
+            #(detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
 
         '''    
         # Reshape vectors to correspond to indices
@@ -167,7 +169,8 @@ if __name__ == "__main__":
                 bbox_colors = [[1, 0, 0],
                                 [0, 0, 1],
                                 [0, 1, 0],
-                                [1, 1, 0]]
+                                [1, 1, 0],
+                                [0.5, 0.5, 0.5]]
                 for x1, y1, x2, y2, conf, cls_conf, cls_pred, ID in detections:
                     
                     if cls_conf.item() > 0.8:
@@ -177,7 +180,8 @@ if __name__ == "__main__":
                         box_w = max(x2 - x1, 20)
                         box_h = max(y2 - y1, 20)
 
-                        color = bbox_colors[int(np.where(unique_labels == int(cls_pred))[0])]
+                        #color = bbox_colors[int(np.where(unique_labels == int(cls_pred))[0])]
+                        color = bbox_colors[int(cls_pred)]
                         # Create a Rectangle patch
                         bbox = patches.Rectangle((x1, y1), box_w, box_h, linewidth=2, edgecolor=color, facecolor="none")
                         # Add the bbox to the plot
