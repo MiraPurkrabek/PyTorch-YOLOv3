@@ -255,11 +255,12 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
         # Sort by it
         image_pred = image_pred[(-score).argsort()]
         class_confs, class_preds = image_pred[:, 5:-1].max(1, keepdim=True)
+        
+        # Replace low confs. with human detections
         idxs = (class_confs < 0.7).reshape(-1)
-        #if torch.any(idxs):
-        #    print(idxs)
-        class_confs[idxs] = (image_pred[idxs, -1]).reshape(-1, 1)
-        class_preds[idxs] = 4
+        class_confs[idxs] = (image_pred[idxs, -1]).reshape(-1, 1) # Replace confidence for human confidence
+        class_preds[idxs] = 4 # Replace class for human
+        
         detections = torch.cat((image_pred[:, :5], class_confs.float(), class_preds.float()), 1)
         #print("Detections size", detections.size())
         # Perform non-maximum suppression
@@ -269,16 +270,7 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
             large_overlap = bbox_iou(detections[0, :4].unsqueeze(0), detections[:, :4]) > nms_thres
             huge_overlap = bbox_iou(detections[0, :4].unsqueeze(0), detections[:, :4]) > 0.6
             label_match = detections[0, -1] == detections[:, -1]
-            '''
-            if int(detections[0, -1]) < 1e-5:
-                both_players = detections[:, -1] == 1
-            elif int(detections[0, -1]) - 1 < 1e-5:
-                both_players = detections[:, -1] == 0
-            else:
-                both_players = torch.BoolTensor([False for _ in range (detections.size(0))])
-            '''
             # Indices of boxes with lower confidence scores, large IOUs and matching labels
-            #invalid = large_overlap & (label_match | both_players)
             invalid = (large_overlap & label_match) | huge_overlap
             weights = detections[invalid, 4:5]
             # Merge overlapping bboxes by order of confidence
@@ -286,6 +278,7 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
             keep_boxes += [torch.cat([detections[0], torch.Tensor([torch_v[0]])], 0)]
             keep_boxes_idx += [torch_v[0]]
             detections = detections[~invalid]
+            #detections = detections[1:]
             torch_v = torch_v[~invalid]
         if keep_boxes:
             output[image_i] = torch.stack(keep_boxes)
