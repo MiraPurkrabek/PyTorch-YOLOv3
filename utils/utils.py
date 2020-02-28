@@ -223,7 +223,7 @@ def bbox_iou(box1, box2, x1y1x2y2=True):
     return iou
 
 
-def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
+def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4, returnIndices=False):
     """
     Removes detections with lower object confidence score than 'conf_thres' and performs
     Non-Maximum Suppression to further filter detections.
@@ -286,7 +286,7 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
             #print("Keeping", output[image_i].size())
             #print(keep_boxes)
 
-    return output
+    return output, indices if returnIndices else output
     #return output, indices
 
 

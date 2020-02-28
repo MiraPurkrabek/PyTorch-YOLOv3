@@ -53,7 +53,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
-    parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
+    parser.add_argument("--save_images", type=bool, default=False, help="flag if saving images with detections")
     opt = parser.parse_args()
     print(opt)
 
@@ -86,6 +86,7 @@ if __name__ == "__main__":
 
     imgs = []  # Stores image paths
     img_detections = []  # Stores detections for each image index
+    vectors = []
 
     print("\nPerforming object detection:")
     prev_time = time.time()
@@ -95,35 +96,40 @@ if __name__ == "__main__":
 
         # Get detections
         with torch.no_grad():
-            detections = model(input_imgs)
-            detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
-            #(detections, all_vectors) = model(input_imgs)
-            #(detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            #detections = model(input_imgs)
+            (detections, all_vectors) = model(input_imgs, returnVectors=True)
+            #detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            (detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres, returnIndices=True)
 
-        '''    
+          
         # Reshape vectors to correspond to indices
         for i in range(len(all_vectors)):
             all_vectors[i] = all_vectors[i].reshape(opt.batch_size, int(1024/2**i), int(13*(2**i)*13*(2**i)))
 
         # Keep only valid vectors
         #print(indices)
-        vectors = [None for _ in range(len(indices))]
+        #vectors = [None for _ in range(len(indices))]
+        batch_vectors = []
         for image_i in range(len(indices)):
-            tmp_vectors = []
+            image_vectors = []
             for idx in indices[image_i]:
-                idx = int( (int(idx)-1)/3 )
-                if idx < 13**2:
+                real_idx = int( (int(idx)-1)/3 )
+                if real_idx < 13**2:
                     anchor = 0
-                elif idx < 26**2:
+                elif real_idx < 26**2:
                     anchor = 1
-                    idx -= 13**2
+                    real_idx -= 13**2
                 else:
-                    idx -= (13**2+26**2)
+                    real_idx -= (13**2+26**2)
                     anchor = 2
-                print("Image {:d}, keeping vector {:d} from anchor {:d}".format(image_i, idx, anchor))
-                tmp_vectors += [all_vectors[anchor][image_i, ..., idx]]
-            print("-----")
-        '''
+                #print("Image {:d}, keeping vector {:d} from anchor {:d}".format(image_i, real_idx, 13*2**(anchor)))
+                image_vectors.append(all_vectors[anchor][image_i, ..., real_idx])
+            print("Image vectors len:", len(image_vectors))
+            batch_vectors.append(image_vectors)
+            #print("-----")
+        
+        print("Batch vectors len:", len(batch_vectors))
+        vectors.append(batch_vectors)
 
         # Log progress
         current_time = time.time()
@@ -135,6 +141,8 @@ if __name__ == "__main__":
         imgs.extend(img_paths)
         img_detections.extend(detections)
 
+    print("Vectors len: [{:d}, {:d}, {:d}]".format(len(vectors), len(vectors[0]), len(vectors[0][0])))
+    
     # Bounding-box colors
     cmap = plt.get_cmap("tab20b")
     colors = [cmap(i) for i in np.linspace(0, 1, 20)]
@@ -156,6 +164,14 @@ if __name__ == "__main__":
             # Save detections into .txt file
             saveDetections(detections, path, img.shape, opt.conf_thres)
             
+            # Do some magic with vectors
+            image_vectors = vectors[int(img_i/opt.batch_size)][int(img_i%opt.batch_size)]
+            prevImage_vectors = None
+            if img_i > 0:
+                prevImage_vectors = vectors[int( (img_i-1)/opt.batch_size )][int( (img_i-1)%opt.batch_size )]
+                #print("Image {:d}, number of vectors: {:d}, previous image {:d}".format(img_i, len(image_vectors), len(prevImage_vectors)))
+            
+
             if opt.save_images:
                 
                 # Create plot
@@ -193,15 +209,16 @@ if __name__ == "__main__":
                             anchor = 26
                         else:
                             anchor = 52
-                        #plt.text(
-                        #    x1,
-                        #    y1,
-                        #    s="{:.2f}\n{:.2f}".format(conf, cls_conf),
-                        #    #s=classes[int(cls_pred)],
-                        #    color="black",
-                        #    verticalalignment="top",
-                        #    bbox={"color": color, "pad": 0},
-                        #)
+                        plt.text(
+                            x1,
+                            y1,
+                            s="{:d}".format(anchor),
+                            #s="{:.2f}\n{:.2f}".format(conf, cls_conf),
+                            #s=classes[int(cls_pred)],
+                            color="black",
+                            verticalalignment="top",
+                            bbox={"color": color, "pad": 0},
+                        )
 
 
         if opt.save_images:

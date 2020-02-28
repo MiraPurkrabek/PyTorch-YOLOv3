@@ -248,7 +248,7 @@ class Darknet(nn.Module):
         self.seen = 0
         self.header_info = np.array([0, 0, 0, self.seen, 0], dtype=np.int32)
 
-    def forward(self, x, targets=None):
+    def forward(self, x, targets=None, returnVectors=False):
         img_dim = x.shape[2]
         loss = 0
         layer_outputs, yolo_outputs = [], []
@@ -279,8 +279,10 @@ class Darknet(nn.Module):
         #print("Targets:", targets)
         yolo_outputs = to_cpu(torch.cat(yolo_outputs, 1))
         #print("========= Detection done =========\n")
-        return yolo_outputs if targets is None else (loss, yolo_outputs)
-        #return (yolo_outputs, vectors) if targets is None else (loss, yolo_outputs)
+        if returnVectors:
+            return (yolo_outputs, vectors) if targets is None else (loss, yolo_outputs)
+        else:
+            return yolo_outputs if targets is None else (loss, yolo_outputs)
 
     def load_darknet_weights(self, weights_path):
         """Parses and loads the weights stored in 'weights_path'"""
