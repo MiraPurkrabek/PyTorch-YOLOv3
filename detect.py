@@ -21,6 +21,30 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.ticker import NullLocator
 
+def vectorDistance(v1, v2):
+    if v1.size() == v2.size():
+        #print("Comapring same vectors of size", v1.size())
+        ret = torch.dist(v1, v2)
+    else:
+        print("Comapring size", v1.size(), " and ", v2.size())
+        ret = 1e6
+    return ret
+
+
+def vectorNN(vector, prev_vectors, selected, cls_pred, prev_cls):
+    smallest = 1e3
+    ret = -1
+    for idx in range(len(prev_vectors)):
+        #print("Comparing 'vector' with {:d}".format(idx))
+        #print("Comparing 'vector'", vector, "with {:d}".format(idx), prev_vectors[idx])
+        if not selected[idx] and int(cls_pred) == int(prev_cls[idx]):
+            dist = vectorDistance(vector, prevImage_vectors[idx])
+            if dist < smallest:
+                smallest = dist
+                ret = idx
+    #print("-----------")
+    #print("\t{:f}\t".format(smallest), end="")
+    return ret
 
 def saveDetections(dets, path, size, thresh):
     #size = [1, 1]
@@ -53,7 +77,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
-    parser.add_argument("--save_images", type=bool, default=False, help="flag if saving images with detections")
+    parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
     opt = parser.parse_args()
     print(opt)
 
@@ -104,8 +128,10 @@ if __name__ == "__main__":
           
         # Reshape vectors to correspond to indices
         for i in range(len(all_vectors)):
-            all_vectors[i] = all_vectors[i].reshape(opt.batch_size, int(1024/2**i), int(13*(2**i)*13*(2**i)))
-
+            #all_vectors[i] = all_vectors[i].reshape(opt.batch_size, int(1024/2**i), int(13*(2**i)*13*(2**i)))
+            print("vector {:d} resized...".format(i))
+            all_vectors[i] = all_vectors[i].reshape(-1, int(1024/2**i), int(13*(2**i)*13*(2**i)))
+            
         # Keep only valid vectors
         #print(indices)
         #vectors = [None for _ in range(len(indices))]
@@ -124,11 +150,11 @@ if __name__ == "__main__":
                     anchor = 2
                 #print("Image {:d}, keeping vector {:d} from anchor {:d}".format(image_i, real_idx, 13*2**(anchor)))
                 image_vectors.append(all_vectors[anchor][image_i, ..., real_idx])
-            print("Image vectors len:", len(image_vectors))
+            #print("Image vectors len:", len(image_vectors))
             batch_vectors.append(image_vectors)
             #print("-----")
         
-        print("Batch vectors len:", len(batch_vectors))
+        #print("Batch vectors len:", len(batch_vectors))
         vectors.append(batch_vectors)
 
         # Log progress
@@ -147,12 +173,26 @@ if __name__ == "__main__":
     cmap = plt.get_cmap("tab20b")
     colors = [cmap(i) for i in np.linspace(0, 1, 20)]
 
+    prevImage_vectors = []
+    selected = []
+    prev_cls = []
+    
+    IDs = list(range(15))
+    oldIDs = list(range(15))
+    nextID = 15
+    num_dets = 0
+    
     print("\nSaving images:")
     # Iterate through images and save plot of detections
     for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
 
         print("({:02d}) Image: '{:s}'".format(img_i, path))
 
+        prev_num_dets = num_dets
+        num_dets = len(detections)
+        add_cons = ((img_i)%2 * prev_num_dets)
+        print("-- Previous num_dets: {:d}, current num_dets {:d}".format(prev_num_dets, num_dets))
+        print("Add constant {:d}".format( add_cons ))
 
         # Draw bounding boxes and labels of detections
         if detections is not None:
@@ -166,12 +206,45 @@ if __name__ == "__main__":
             
             # Do some magic with vectors
             image_vectors = vectors[int(img_i/opt.batch_size)][int(img_i%opt.batch_size)]
-            prevImage_vectors = None
-            if img_i > 0:
+            if img_i > 0 and img_i%2 == 0:
                 prevImage_vectors = vectors[int( (img_i-1)/opt.batch_size )][int( (img_i-1)%opt.batch_size )]
+                prevImage_vectors += vectors[int( (img_i-2)/opt.batch_size )][int( (img_i-2)%opt.batch_size )]
+                prev_cls = torch.cat((img_detections[img_i-2:img_i]), 0)[:, 6]
+                #print("img_detections:", len(img_detections), img_detections[0])
+                #print("Prev cls:", prev_cls)
+                selected = [False for _ in range(len(prevImage_vectors))]
                 #print("Image {:d}, number of vectors: {:d}, previous image {:d}".format(img_i, len(image_vectors), len(prevImage_vectors)))
+                oldIDs = IDs.copy()
             
+            
+            print("IDs before change:", IDs)
+            
+            if len(prevImage_vectors) > 0:
+                #print("Comparing image {:d} with another {:d} vectors".format(img_i, len(prevImage_vectors)))
+                for idx in range(len(image_vectors)):
+                    orig_idx = vectorNN(image_vectors[idx], prevImage_vectors, selected, detections[idx, 6], prev_cls)
+                    #print("idx {:d}, changing cell {:d} ({:d}+{:d})".format(idx, idx + add_cons, idx, add_cons))
+                    #print("-----")
+                    if orig_idx < 0:
+                        IDs[idx + add_cons] = nextID
+                        nextID += 1
+                    else:
+                        selected[orig_idx] = True
+                        IDs[idx + add_cons] = oldIDs[orig_idx]
+                    if int(detections[idx, 6]) == 4:
+                        print("idx:, {:d}, res {:d}, prev_cls:".format(idx, orig_idx), prev_cls)
+                    #print("oldIDs:", oldIDs)
+                    #print("IDs:", IDs)
+                    #print("Res:", orig_idx)
+                    #print("selected:", selected)
+                    #print("-----")
+                    print("\t{:d}({:d}) --> {:d}({:d})".format(oldIDs[orig_idx], int(prev_cls[orig_idx]), idx+add_cons, int(detections[idx, 6])))
+            #else:
+                #print("Assigning new IDs to image {:d}".format(img_i))
+                #correspondings = range(len(image_vectors))
 
+            
+            print("IDs to write:", IDs)
             if opt.save_images:
                 
                 # Create plot
@@ -187,11 +260,13 @@ if __name__ == "__main__":
                                 [0, 1, 0],
                                 [1, 1, 0],
                                 [0.5, 0.5, 0.5]]
-                for x1, y1, x2, y2, conf, cls_conf, cls_pred, ID in detections:
+                #for x1, y1, x2, y2, conf, cls_conf, cls_pred, ID in detections:
+                for det_i in range(len(detections)):
+                    x1, y1, x2, y2, conf, cls_conf, cls_pred, ID = detections[det_i]
+
+                    if cls_conf.item() > 0.5:
                     
-                    if cls_conf.item() > 0.8:
-                    
-                        print("\t+ Label: %s, Conf: %.5f" % (classes[int(cls_pred)], cls_conf.item()))
+                        print("\t+ Label: %s, Conf: %.5f, ID: %d" % (classes[int(cls_pred)], cls_conf.item(), IDs[det_i + add_cons]))
 
                         box_w = max(x2 - x1, 20)
                         box_h = max(y2 - y1, 20)
@@ -212,7 +287,7 @@ if __name__ == "__main__":
                         plt.text(
                             x1,
                             y1,
-                            s="{:d}".format(anchor),
+                            s="{:d}".format(IDs[det_i + add_cons]),
                             #s="{:.2f}\n{:.2f}".format(conf, cls_conf),
                             #s=classes[int(cls_pred)],
                             color="black",

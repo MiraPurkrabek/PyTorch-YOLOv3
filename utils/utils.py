@@ -242,7 +242,7 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4, returnIndices
         v1 = np.arange(13**2 * 3, (13**2 + 26**2) * 3)
         v2 = np.arange((13**2 + 26**2) * 3, (13**2 + 26**2 + 52**2) * 3)
         v = np.concatenate((v0, v1, v2), axis=0)
-        torch_v = torch.from_numpy(v)
+        torch_v = torch.from_numpy(v0)
         torch_v = torch_v[image_pred[:, 4] >= conf_thres]
         #print("image_pred indexes")
         #print(torch_v)
@@ -254,6 +254,7 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4, returnIndices
         score = image_pred[:, 4] * image_pred[:, 5:].max(1)[0]
         # Sort by it
         image_pred = image_pred[(-score).argsort()]
+        torch_v = torch_v[(-score).argsort()]
         class_confs, class_preds = image_pred[:, 5:-1].max(1, keepdim=True)
         
         # Replace low confs. with human detections
