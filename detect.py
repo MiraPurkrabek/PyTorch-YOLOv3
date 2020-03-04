@@ -26,7 +26,7 @@ def vectorDistance(v1, v2):
         #print("Comapring same vectors of size", v1.size())
         ret = torch.dist(v1, v2)
     else:
-        print("Comapring size", v1.size(), " and ", v2.size())
+        #print("Comapring size", v1.size(), " and ", v2.size())
         ret = 1e6
     return ret
 
@@ -129,7 +129,7 @@ if __name__ == "__main__":
         # Reshape vectors to correspond to indices
         for i in range(len(all_vectors)):
             #all_vectors[i] = all_vectors[i].reshape(opt.batch_size, int(1024/2**i), int(13*(2**i)*13*(2**i)))
-            print("vector {:d} resized...".format(i))
+            #print("vector {:d} resized...".format(i))
             all_vectors[i] = all_vectors[i].reshape(-1, int(1024/2**i), int(13*(2**i)*13*(2**i)))
             
         # Keep only valid vectors
@@ -177,9 +177,9 @@ if __name__ == "__main__":
     selected = []
     prev_cls = []
     
-    IDs = list(range(15))
-    oldIDs = list(range(15))
-    nextID = 15
+    IDs = list(range(25))
+    oldIDs = list(range(25))
+    nextID = 25
     num_dets = 0
     
     print("\nSaving images:")
@@ -191,8 +191,8 @@ if __name__ == "__main__":
         prev_num_dets = num_dets
         num_dets = len(detections)
         add_cons = ((img_i)%2 * prev_num_dets)
-        print("-- Previous num_dets: {:d}, current num_dets {:d}".format(prev_num_dets, num_dets))
-        print("Add constant {:d}".format( add_cons ))
+        #print("-- Previous num_dets: {:d}, current num_dets {:d}".format(prev_num_dets, num_dets))
+        #print("Add constant {:d}".format( add_cons ))
 
         # Draw bounding boxes and labels of detections
         if detections is not None:
@@ -238,7 +238,7 @@ if __name__ == "__main__":
                     #print("Res:", orig_idx)
                     #print("selected:", selected)
                     #print("-----")
-                    print("\t{:d}({:d}) --> {:d}({:d})".format(oldIDs[orig_idx], int(prev_cls[orig_idx]), idx+add_cons, int(detections[idx, 6])))
+                    #print("\t{:d}({:d}) --> {:d}({:d})".format(oldIDs[orig_idx], int(prev_cls[orig_idx]), idx+add_cons, int(detections[idx, 6])))
             #else:
                 #print("Assigning new IDs to image {:d}".format(img_i))
                 #correspondings = range(len(image_vectors))

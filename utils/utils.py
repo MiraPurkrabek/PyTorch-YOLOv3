@@ -151,6 +151,7 @@ def get_batch_statistics(outputs, targets, iou_threshold):
             continue
 
         output = outputs[sample_i]
+        #print(output)
         pred_boxes = output[:, :4]
         pred_scores = output[:, 4]
         pred_labels = output[:, -1]
@@ -242,7 +243,7 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4, returnIndices
         v1 = np.arange(13**2 * 3, (13**2 + 26**2) * 3)
         v2 = np.arange((13**2 + 26**2) * 3, (13**2 + 26**2 + 52**2) * 3)
         v = np.concatenate((v0, v1, v2), axis=0)
-        torch_v = torch.from_numpy(v0)
+        torch_v = torch.from_numpy(v)
         torch_v = torch_v[image_pred[:, 4] >= conf_thres]
         #print("image_pred indexes")
         #print(torch_v)
@@ -272,7 +273,8 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4, returnIndices
             huge_overlap = bbox_iou(detections[0, :4].unsqueeze(0), detections[:, :4]) > 0.6
             label_match = detections[0, -1] == detections[:, -1]
             # Indices of boxes with lower confidence scores, large IOUs and matching labels
-            invalid = (large_overlap & label_match) | huge_overlap
+            #invalid = (large_overlap & label_match) | huge_overlap
+            invalid = large_overlap & label_match
             weights = detections[invalid, 4:5]
             # Merge overlapping bboxes by order of confidence
             detections[0, :4] = (weights * detections[invalid, :4]).sum(0) / weights.sum()
@@ -287,7 +289,11 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4, returnIndices
             #print("Keeping", output[image_i].size())
             #print(keep_boxes)
 
-    return output, indices if returnIndices else output
+    if returnIndices:
+        return output, indices
+    else:
+        #print("returning nms without indices... ")
+        return output
     #return output, indices
 
 

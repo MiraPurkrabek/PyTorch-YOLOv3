@@ -262,15 +262,15 @@ class Darknet(nn.Module):
                 layer_i = int(module_def["from"])
                 x = layer_outputs[-1] + layer_outputs[layer_i]
             elif module_def["type"] == "yolo":
-                print("====== Running YOLO layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
+                #print("====== Running YOLO layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
                 x, layer_loss = module[0](x, targets, img_dim)
                 #print("\tOutput from this layer has len {:f}, {:f}, {:f}".format(len(x), len(x[0]), len(x[0][0])))
                 #print("\tOutput from prev layer has len {:f}, {:f}, {:f}".format(len(layer_outputs[-1]), len(layer_outputs[-1][0]), len(layer_outputs[-1][0][0])))
                 #print(layer_outputs[-1][0][0])
                 loss += layer_loss
-                if i is 82:
-                    yolo_outputs.append(x)
-                    vectors.append(layer_outputs[i-2])
+                #if i is 82:
+                yolo_outputs.append(x)
+                vectors.append(layer_outputs[i-2])
                 #print(vectors)
             layer_outputs.append(x)
         #for i in range(len(vectors)):
@@ -282,6 +282,7 @@ class Darknet(nn.Module):
         if returnVectors:
             return (yolo_outputs, vectors) if targets is None else (loss, yolo_outputs)
         else:
+            #print("returning only yolo_outputs...")
             return yolo_outputs if targets is None else (loss, yolo_outputs)
 
     def load_darknet_weights(self, weights_path):
