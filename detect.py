@@ -231,8 +231,8 @@ if __name__ == "__main__":
                     else:
                         selected[orig_idx] = True
                         IDs[idx + add_cons] = oldIDs[orig_idx]
-                    if int(detections[idx, 6]) == 4:
-                        print("idx:, {:d}, res {:d}, prev_cls:".format(idx, orig_idx), prev_cls)
+                    #if int(detections[idx, 6]) == 4:
+                        #print("idx:, {:d}, res {:d}, prev_cls:".format(idx, orig_idx), prev_cls)
                     #print("oldIDs:", oldIDs)
                     #print("IDs:", IDs)
                     #print("Res:", orig_idx)

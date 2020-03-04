@@ -81,6 +81,17 @@ def create_modules(module_defs):
             # Define detection layer
             yolo_layer = YOLOLayer(anchors, num_classes, img_size)
             modules.add_module("yolo_{module_i}", yolo_layer)
+        elif module_def["type"] == "ID":
+            anchor_idxs = [int(x) for x in module_def["mask"].split(",")]
+            # Extract anchors
+            anchors = [int(x) for x in module_def["anchors"].split(",")]
+            anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
+            anchors = [anchors[i] for i in anchor_idxs]
+            num_classes = int(module_def["classes"])
+            img_size = int(hyperparams["height"])
+            # Define detection layer
+            yolo_layer = YOLOLayer(anchors, num_classes, img_size)
+            modules.add_module("yolo_{module_i}", yolo_layer)
         # Register module list and number of output filters
         module_list.append(modules)
         output_filters.append(filters)
@@ -263,6 +274,7 @@ class Darknet(nn.Module):
                 x = layer_outputs[-1] + layer_outputs[layer_i]
             elif module_def["type"] == "yolo":
                 #print("====== Running YOLO layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
+                prev_x = x
                 x, layer_loss = module[0](x, targets, img_dim)
                 #print("\tOutput from this layer has len {:f}, {:f}, {:f}".format(len(x), len(x[0]), len(x[0][0])))
                 #print("\tOutput from prev layer has len {:f}, {:f}, {:f}".format(len(layer_outputs[-1]), len(layer_outputs[-1][0]), len(layer_outputs[-1][0][0])))
@@ -272,6 +284,13 @@ class Darknet(nn.Module):
                 yolo_outputs.append(x)
                 vectors.append(layer_outputs[i-2])
                 #print(vectors)
+            elif module_def["type"] == "ID":
+                print("====== Running ID layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
+                tmp_x, layer_loss = module[0](prev_x, targets, img_dim)
+                print(tmp_x.size())
+                #loss += layer_loss
+                #yolo_outputs.append(x)
+
             layer_outputs.append(x)
         #for i in range(len(vectors)):
         #    print(len(vectors), vectors[i].size())

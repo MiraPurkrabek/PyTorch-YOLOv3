@@ -186,10 +186,18 @@ def bbox_wh_iou(wh1, wh2):
     wh2 = wh2.t()
     w1, h1 = wh1[0], wh1[1]
     w2, h2 = wh2[0], wh2[1]
-    inter_area = torch.min(w1, w2) * torch.min(h1, h2)
-    union_area = (w1 * h1 + 1e-16) + w2 * h2 - inter_area
-    return inter_area / union_area
-
+    #print("w1", w1)
+    #print("w2", w2)
+    w1e = w1.nelement()
+    w2e = w2.nelement()
+    size = max(w1e, w2e)
+    if w1e > 0 and w2e > 0:
+        inter_area = torch.min(w1, w2) * torch.min(h1, h2)
+        union_area = (w1 * h1 + 1e-16) + w2 * h2 - inter_area
+        return inter_area / union_area
+    else:
+        #print("Previously emmpty vector")
+        return torch.cuda.FloatTensor([0 for _ in range(size)]) if w1.is_cuda else torch.FloatTensor([0 for _ in range(size)])
 
 def bbox_iou(box1, box2, x1y1x2y2=True):
     """
@@ -324,6 +332,11 @@ def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
     gwh = target_boxes[:, 2:]
     # Get anchors with best iou
     ious = torch.stack([bbox_wh_iou(anchor, gwh) for anchor in anchors])
+    
+    #print(ious.nelement())
+    if ious.nelement() == 0:
+        ious = torch.cuda.FloatTensor([0]) if ious.is_cuda else torch.FloatTensor([0])
+    
     best_ious, best_n = ious.max(0)
     # Separate target values
     b, target_labels = target[:, :2].long().t()
@@ -351,4 +364,16 @@ def build_targets(pred_boxes, pred_cls, target, anchors, ignore_thres):
     iou_scores[b, best_n, gj, gi] = bbox_iou(pred_boxes[b, best_n, gj, gi], target_boxes, x1y1x2y2=False)
 
     tconf = obj_mask.float()
+    '''
+        print("iou_scores", iou_scores)
+        print("class_mask", class_mask)
+        print("obj_mask", obj_mask)
+        print("noobj_mask", noobj_mask)
+        print("tx", tx)
+        print("ty", ty)
+        print("tw", tw)
+        print("th", th)
+        print("tcls", tcls)
+        print("tconf", tconf)
+    '''
     return iou_scores, class_mask, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf
