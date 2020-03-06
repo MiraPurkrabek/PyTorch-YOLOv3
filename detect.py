@@ -30,6 +30,51 @@ def vectorDistance(v1, v2):
         ret = 1e6
     return ret
 
+def positionDist(pos1, pos2):
+    #print("Pos1", pos1)
+    #print("Pos2", pos2)
+    #return math.sqrt( (pos1[0]-pos2[0])**2 + (pos1[1]-pos2[1])**2 )
+    return torch.dist(pos1, pos2).tolist()
+
+def positionTracking(idx, pos, cls_pred, prev_pos, prev_cls):
+    dist_limit = (50, 40)
+    #pos = pos.tolist()
+    p1 = pos[idx]
+    #prev_pos = prev_pos.tolist()
+    #print("cls", cls_pred)
+    #print("prev_cls", prev_cls)
+    #print("Pos", pos)
+    #print("Prev_pos", prev_pos)
+    #print("Prev_pos length", len(prev_pos))
+    valid_prev = (prev_cls == cls_pred[idx])
+    valid_curr = (cls_pred == cls_pred[idx])
+    indices_prev = torch.Tensor([i for i in range(len(prev_pos.tolist()))])
+    indices_prev = indices_prev[valid_prev]
+    distances_prev = [positionDist(det, p1) for det in prev_pos[valid_prev]]
+    distances_curr = [positionDist(det, p1) for det in pos[valid_curr]]
+    num_same_class = len(distances_curr)
+    if len(distances_prev)>0:
+        distPrev = min(distances_prev)
+        prev_i = np.argmin(distances_prev)
+    else:
+        return -1
+    distances_curr.sort()
+    print(distances_curr)
+    distCurr = 1e4
+    for d in distances_curr:
+        if d > 0:
+            distCurr = d
+            break
+    
+    ret = int(indices_prev[prev_i])
+    print("cond1", distPrev < dist_limit[0], "cond2", distCurr-distPrev<dist_limit[1], "cond3", num_same_class<2)
+    print("class {:f} - {:f} vs. {:f}, {:f}, {:d}".format(cls_pred[idx], distPrev, distCurr, prev_cls[ret], num_same_class), end="")
+    if (distPrev < dist_limit[0]) and (distCurr-distPrev > dist_limit[1] or num_same_class < 2):
+        print(" - OK")
+        return ret
+    print()
+
+    return -1
 
 def vectorNN(vector, prev_vectors, selected, cls_pred, prev_cls):
     smallest = 1e3
@@ -46,13 +91,13 @@ def vectorNN(vector, prev_vectors, selected, cls_pred, prev_cls):
     #print("\t{:f}\t".format(smallest), end="")
     return ret
 
-def saveDetections(dets, path, size, thresh):
+def saveDetections(dets, path, size, thresh, IDs, cons):
     #size = [1, 1]
     #print(size)
     name = path.split("/")[-1].split(".")[0]
     name = "output/"+name+".txt"
     f = open(name, 'w')
-    for bb in dets:
+    for bb, bb_i in zip(dets, range(len(dets))):
         if bb[-2] > thresh:
             a = bb[0]
             b = bb[1]
@@ -62,7 +107,7 @@ def saveDetections(dets, path, size, thresh):
             h = d-b
             cx = a+w/2
             cy = b+h/2
-            f.write("{:d} {:f} {:f} {:f} {:f} {:f}\n".format(int(bb[-1]), cx/size[1], cy/size[0], w/size[1], h/size[0], bb[-2]))
+            f.write("{:d} {:f} {:f} {:f} {:f} {:f}\n".format(IDs[bb_i + cons], cx/size[1], cy/size[0], w/size[1], h/size[0], bb[-2]))
     f.close()
 
 if __name__ == "__main__":
@@ -120,24 +165,25 @@ if __name__ == "__main__":
 
         # Get detections
         with torch.no_grad():
-            #detections = model(input_imgs)
-            (detections, all_vectors) = model(input_imgs, returnVectors=True)
-            #detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
-            (detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres, returnIndices=True)
+            detections = model(input_imgs)
+            #(detections, all_vectors) = model(input_imgs, returnVectors=True)
+            detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            #(detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres, returnIndices=True)
 
           
+        '''    
         # Reshape vectors to correspond to indices
         for i in range(len(all_vectors)):
             #all_vectors[i] = all_vectors[i].reshape(opt.batch_size, int(1024/2**i), int(13*(2**i)*13*(2**i)))
             #print("vector {:d} resized...".format(i))
             all_vectors[i] = all_vectors[i].reshape(-1, int(1024/2**i), int(13*(2**i)*13*(2**i)))
-            
+
         # Keep only valid vectors
-        #print(indices)
         #vectors = [None for _ in range(len(indices))]
         batch_vectors = []
         for image_i in range(len(indices)):
             image_vectors = []
+            print(indices[image_i])
             for idx in indices[image_i]:
                 real_idx = int( (int(idx)-1)/3 )
                 if real_idx < 13**2:
@@ -156,6 +202,7 @@ if __name__ == "__main__":
         
         #print("Batch vectors len:", len(batch_vectors))
         vectors.append(batch_vectors)
+        '''
 
         # Log progress
         current_time = time.time()
@@ -167,7 +214,7 @@ if __name__ == "__main__":
         imgs.extend(img_paths)
         img_detections.extend(detections)
 
-    print("Vectors len: [{:d}, {:d}, {:d}]".format(len(vectors), len(vectors[0]), len(vectors[0][0])))
+    #print("Vectors len: [{:d}, {:d}, {:d}]".format(len(vectors), len(vectors[0]), len(vectors[0][0])))
     
     # Bounding-box colors
     cmap = plt.get_cmap("tab20b")
@@ -177,10 +224,12 @@ if __name__ == "__main__":
     selected = []
     prev_cls = []
     
-    IDs = list(range(25))
-    oldIDs = list(range(25))
-    nextID = 25
+    max_dets = 40
+    IDs = list(range(max_dets))
+    oldIDs = list(range(max_dets))
+    nextID = max_dets
     num_dets = 0
+    num_images_for_field = 1
     
     print("\nSaving images:")
     # Iterate through images and save plot of detections
@@ -189,10 +238,9 @@ if __name__ == "__main__":
         print("({:02d}) Image: '{:s}'".format(img_i, path))
 
         prev_num_dets = num_dets
-        num_dets = len(detections)
-        add_cons = ((img_i)%2 * prev_num_dets)
-        #print("-- Previous num_dets: {:d}, current num_dets {:d}".format(prev_num_dets, num_dets))
-        #print("Add constant {:d}".format( add_cons ))
+        num_dets = len(detections) if detections is not None else 0
+        add_cons = ((img_i)%num_images_for_field * prev_num_dets)
+        print("-- Previous num_dets: {:d}, current num_dets {:d}, add constant {:d}".format(prev_num_dets, num_dets, add_cons))
 
         # Draw bounding boxes and labels of detections
         if detections is not None:
@@ -201,36 +249,39 @@ if __name__ == "__main__":
             # Rescale boxes to original image
             detections = rescale_boxes(detections, opt.img_size, img.shape[:2])
             
-            # Save detections into .txt file
-            saveDetections(detections, path, img.shape, opt.conf_thres)
             
             # Do some magic with vectors
-            image_vectors = vectors[int(img_i/opt.batch_size)][int(img_i%opt.batch_size)]
-            if img_i > 0 and img_i%2 == 0:
-                prevImage_vectors = vectors[int( (img_i-1)/opt.batch_size )][int( (img_i-1)%opt.batch_size )]
-                prevImage_vectors += vectors[int( (img_i-2)/opt.batch_size )][int( (img_i-2)%opt.batch_size )]
-                prev_cls = torch.cat((img_detections[img_i-2:img_i]), 0)[:, 6]
+            #image_vectors = vectors[int(img_i/opt.batch_size)][int(img_i%opt.batch_size)]
+            if img_i > 0 and img_i%num_images_for_field == 0:
+                #prevImage_vectors = vectors[int( (img_i-1)/opt.batch_size )][int( (img_i-1)%opt.batch_size )]
+                #prevImage_vectors += vectors[int( (img_i-2)/opt.batch_size )][int( (img_i-2)%opt.batch_size )]
+                prev_cls = torch.cat((img_detections[img_i-num_images_for_field:img_i]), 0)
+                #print("prev_cls size", prev_cls.nelement())
+                prev_cls = prev_cls[:, 6] if prev_cls.nelement() != 0 else []
+                prev_pos = torch.cat((img_detections[img_i-num_images_for_field:img_i]), 0)
+                prev_pos = prev_pos[:, :2] if prev_pos.nelement() != 0 else []
                 #print("img_detections:", len(img_detections), img_detections[0])
                 #print("Prev cls:", prev_cls)
-                selected = [False for _ in range(len(prevImage_vectors))]
+                #selected = [False for _ in range(prev_cls.nelement())]
                 #print("Image {:d}, number of vectors: {:d}, previous image {:d}".format(img_i, len(image_vectors), len(prevImage_vectors)))
                 oldIDs = IDs.copy()
             
             
-            print("IDs before change:", IDs)
+            #print("IDs before change:", IDs)
             
-            if len(prevImage_vectors) > 0:
+            if len(prev_cls) > 0:
                 #print("Comparing image {:d} with another {:d} vectors".format(img_i, len(prevImage_vectors)))
-                for idx in range(len(image_vectors)):
-                    orig_idx = vectorNN(image_vectors[idx], prevImage_vectors, selected, detections[idx, 6], prev_cls)
+                for idx in range(len(detections)):
+                    #orig_idx = vectorNN(image_vectors[idx], prevImage_vectors, selected, detections[idx, 6], prev_cls)
+                    orig_idx = positionTracking(idx, detections[:, :2], detections[:, 6], prev_pos, prev_cls)
                     #print("idx {:d}, changing cell {:d} ({:d}+{:d})".format(idx, idx + add_cons, idx, add_cons))
                     #print("-----")
                     if orig_idx < 0:
                         IDs[idx + add_cons] = nextID
                         nextID += 1
                     else:
-                        selected[orig_idx] = True
                         IDs[idx + add_cons] = oldIDs[orig_idx]
+                    #    selected[orig_idx] = True
                     #if int(detections[idx, 6]) == 4:
                         #print("idx:, {:d}, res {:d}, prev_cls:".format(idx, orig_idx), prev_cls)
                     #print("oldIDs:", oldIDs)
@@ -243,8 +294,10 @@ if __name__ == "__main__":
                 #print("Assigning new IDs to image {:d}".format(img_i))
                 #correspondings = range(len(image_vectors))
 
+            # Save detections into .txt file
+            saveDetections(detections, path, img.shape, opt.conf_thres, IDs, add_cons)
             
-            print("IDs to write:", IDs)
+            #print("IDs to write:", IDs)
             if opt.save_images:
                 
                 # Create plot
@@ -294,6 +347,9 @@ if __name__ == "__main__":
                             verticalalignment="top",
                             bbox={"color": color, "pad": 0},
                         )
+        else:
+            img_detections[img_i] = torch.FloatTensor([])
+            #print(img_detections)
 
 
         if opt.save_images:
