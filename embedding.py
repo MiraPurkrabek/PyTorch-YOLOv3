@@ -1,7 +1,7 @@
 import torch
 import random
 
-EPOCHS = 500 # Number of epochs
+EPOCHS = 2000 # Number of epochs
 N, D_in = 1, 1024 # Batch size, input dimension
 H1, H2, H3, H4, H5, H6 = 1024, 512, 512, 512, 256, 256 # Dimensions of hidden layers
 D_out = 128 # Output dimension
@@ -46,6 +46,14 @@ anchor = torch.randn(N, D_in)
 positive = torch.randn(N, D_in)
 negative = torch.randn(N, D_in)
 
+idx = 1
+a = random.randint(0, limits[idx]-1)
+p = random.randint(0, limits[idx]-1)
+n = random.randint(0, limits[1-idx]-1)
+anchor_old = player2[..., a].view(1, 1024)
+positive_old = player2[..., p].view(1, 1024)
+negative_old = player1[..., n].view(1, 1024)
+
 # Use the nn package to define our model as a sequence of layers. nn.Sequential
 # is a Module which contains other Modules, and applies them in sequence to
 # produce its output. Each Linear Module computes output from input using a
@@ -81,11 +89,6 @@ for t in range(EPOCHS):
     p = random.randint(0, limits[idx]-1)
     n = random.randint(0, limits[1-idx]-1)
     
-    # idx = 1
-    # a = 22
-    # p = 100
-    # n = 14
-
     # print("idx: {:d}\ta: {:d}, p: {:d}, n: {:d}".format(idx, a, p, n))
     if idx < 1:
         anchor = player1[..., a].view(1, 1024)
@@ -108,8 +111,11 @@ for t in range(EPOCHS):
     # values of y, and the loss function returns a Tensor containing the
     # loss.
     loss = triplet_loss_fn(a_pred, p_pred, n_pred)
-    if t % 10 == 0:
+    if t % 50 == 0:
         print("Epoch {:d} ---> loss {:6f}".format(t, loss.item()))
+
+    if loss.item() < 0.2:
+        break
 
     # Zero the gradients before running the backward pass.
     model.zero_grad()
@@ -125,3 +131,21 @@ for t in range(EPOCHS):
     with torch.no_grad():
         for param in model.parameters():
             param -= learning_rate * param.grad
+
+print("Learning done!")
+old_dist_ap = torch.dist(anchor_old, positive_old).item()
+old_dist_an = torch.dist(anchor_old, negative_old).item()
+old_dist_pn = torch.dist(positive_old, negative_old).item()
+
+anchor = model(anchor_old)
+positive = model(positive_old)
+negative = model(negative_old)
+
+dist_ap = torch.dist(anchor, positive).item()
+dist_an = torch.dist(anchor, negative).item()
+dist_pn = torch.dist(positive, negative).item()
+
+print("Old distances:\n\tap: {:.4f}, an: {:.4f}, pn: {:.4f}".format(old_dist_ap, old_dist_an, old_dist_pn))
+print("New distances:\n\tap: {:.4f}, an: {:.4f}, pn: {:.4f}".format(dist_ap, dist_an, dist_pn))
+
+
