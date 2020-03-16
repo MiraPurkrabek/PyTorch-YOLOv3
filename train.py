@@ -103,6 +103,7 @@ if __name__ == "__main__":
             targets = Variable(targets.to(device), requires_grad=False)
 
             loss, outputs = model(imgs, targets)
+            print("size of the outputs:", outputs.size())
             loss.backward()
 
             if batches_done % opt.gradient_accumulations:

@@ -59,7 +59,7 @@ def positionTracking(idx, pos, cls_pred, prev_pos, prev_cls):
     else:
         return -1
     distances_curr.sort()
-    print(distances_curr)
+    # print(distances_curr)
     distCurr = 1e4
     for d in distances_curr:
         if d > 0:
@@ -67,12 +67,12 @@ def positionTracking(idx, pos, cls_pred, prev_pos, prev_cls):
             break
     
     ret = int(indices_prev[prev_i])
-    print("cond1", distPrev < dist_limit[0], "cond2", distCurr-distPrev<dist_limit[1], "cond3", num_same_class<2)
-    print("class {:f} - {:f} vs. {:f}, {:f}, {:d}".format(cls_pred[idx], distPrev, distCurr, prev_cls[ret], num_same_class), end="")
+    # print("cond1", distPrev < dist_limit[0], "cond2", distCurr-distPrev<dist_limit[1], "cond3", num_same_class<2)
+    # print("class {:f} - {:f} vs. {:f}, {:f}, {:d}".format(cls_pred[idx], distPrev, distCurr, prev_cls[ret], num_same_class), end="")
     if (distPrev < dist_limit[0]) and (distCurr-distPrev > dist_limit[1] or num_same_class < 2):
-        print(" - OK")
+        # print(" - OK")
         return ret
-    print()
+    # print()
 
     return -1
 
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
-    parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
+    parser.add_argument("--save_images", type=bool, default=False, help="flag if saving images with detections")
     opt = parser.parse_args()
     print(opt)
 
@@ -165,13 +165,11 @@ if __name__ == "__main__":
 
         # Get detections
         with torch.no_grad():
-            detections = model(input_imgs)
-            #(detections, all_vectors) = model(input_imgs, returnVectors=True)
-            detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
-            #(detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres, returnIndices=True)
-
-          
-        '''    
+            #detections = model(input_imgs)
+            (detections, all_vectors) = model(input_imgs, returnVectors=True)
+            #detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            (detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres, returnIndices=True)
+            
         # Reshape vectors to correspond to indices
         for i in range(len(all_vectors)):
             #all_vectors[i] = all_vectors[i].reshape(opt.batch_size, int(1024/2**i), int(13*(2**i)*13*(2**i)))
@@ -183,7 +181,7 @@ if __name__ == "__main__":
         batch_vectors = []
         for image_i in range(len(indices)):
             image_vectors = []
-            print(indices[image_i])
+            # print(indices[image_i])
             for idx in indices[image_i]:
                 real_idx = int( (int(idx)-1)/3 )
                 if real_idx < 13**2:
@@ -202,7 +200,7 @@ if __name__ == "__main__":
         
         #print("Batch vectors len:", len(batch_vectors))
         vectors.append(batch_vectors)
-        '''
+        
 
         # Log progress
         current_time = time.time()
@@ -214,7 +212,21 @@ if __name__ == "__main__":
         imgs.extend(img_paths)
         img_detections.extend(detections)
 
-    #print("Vectors len: [{:d}, {:d}, {:d}]".format(len(vectors), len(vectors[0]), len(vectors[0][0])))
+    print("Vectors len: [{:d}, {:d}, {:d}]".format(len(vectors), len(vectors[0]), len(vectors[0][0])))
+    
+    # Save vectors into file
+    vector_list = []
+    for b in vectors:
+        for img in b:
+            for v in img:
+                # print("V before padding:", v.size())
+                v_pad = torch.nn.ConstantPad1d((0, 1024-v.nelement()), 0)(v)
+                vector_list.append(v_pad)
+                # print("V after padding:", v_pad.size())
+    tensor_to_save = torch.stack(vector_list, dim=-1)
+
+    print("Vectors dimensions:", tensor_to_save.size())
+    torch.save(tensor_to_save, 'output/vectors.pt')
     
     # Bounding-box colors
     cmap = plt.get_cmap("tab20b")
@@ -229,8 +241,9 @@ if __name__ == "__main__":
     oldIDs = list(range(max_dets))
     nextID = max_dets
     num_dets = 0
-    num_images_for_field = 1
-    
+    num_images_for_field = 2
+    ID_list = []
+
     print("\nSaving images:")
     # Iterate through images and save plot of detections
     for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
@@ -240,7 +253,7 @@ if __name__ == "__main__":
         prev_num_dets = num_dets
         num_dets = len(detections) if detections is not None else 0
         add_cons = ((img_i)%num_images_for_field * prev_num_dets)
-        print("-- Previous num_dets: {:d}, current num_dets {:d}, add constant {:d}".format(prev_num_dets, num_dets, add_cons))
+        # print("\tPrevious num_dets: {:d}, current num_dets {:d}, add constant {:d}".format(prev_num_dets, num_dets, add_cons))
 
         # Draw bounding boxes and labels of detections
         if detections is not None:
@@ -265,7 +278,7 @@ if __name__ == "__main__":
                 #selected = [False for _ in range(prev_cls.nelement())]
                 #print("Image {:d}, number of vectors: {:d}, previous image {:d}".format(img_i, len(image_vectors), len(prevImage_vectors)))
                 oldIDs = IDs.copy()
-            
+                # ID_list += oldIDs[:prev_num_dets]
             
             #print("IDs before change:", IDs)
             
@@ -296,8 +309,9 @@ if __name__ == "__main__":
 
             # Save detections into .txt file
             saveDetections(detections, path, img.shape, opt.conf_thres, IDs, add_cons)
-            
-            #print("IDs to write:", IDs)
+            ID_list += IDs[add_cons:(add_cons+num_dets)]
+
+            # print("IDs to write:", IDs)
             if opt.save_images:
                 
                 # Create plot
@@ -361,3 +375,9 @@ if __name__ == "__main__":
             plt.savefig("output/{}.png".format(filename), bbox_inches="tight", pad_inches=0.0)
         
             plt.close()
+
+    IDs_file = open("output/IDs.txt", "w")
+    for i in ID_list:
+        IDs_file.write("{:d} ".format(i))
+    IDs_file.close()
+    print("IDs len:", len(ID_list))
