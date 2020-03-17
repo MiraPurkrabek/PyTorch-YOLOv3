@@ -262,28 +262,20 @@ class Darknet(nn.Module):
                 x = layer_outputs[-1] + layer_outputs[layer_i]
             elif module_def["type"] == "yolo":
                 #print("====== Running YOLO layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
-                prev_x = x
                 x, layer_loss = module[0](x, targets, img_dim)
-                #print("\tOutput from this layer has len {:f}, {:f}, {:f}".format(len(x), len(x[0]), len(x[0][0])))
-                #print("\tOutput from prev layer has len {:f}, {:f}, {:f}".format(len(layer_outputs[-1]), len(layer_outputs[-1][0]), len(layer_outputs[-1][0][0])))
-                #print(layer_outputs[-1][0][0])
                 loss += layer_loss
                 #if i is 82:
                 yolo_outputs.append(x)
                 vectors.append(layer_outputs[i-2])
-                #print(vectors)
             elif module_def["type"] == "ID":
                 # print("====== Running ID layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
-                x, layer_loss = module[0](x)
+                x, layer_loss = module[0](x, targets)
                 # print("Id layer output:", x.size())
                 loss += layer_loss
                 yolo_outputs.append(x)
 
             layer_outputs.append(x)
-        #for i in range(len(vectors)):
-        #    print(len(vectors), vectors[i].size())
-        #print(yolo_outputs)
-        #print("Targets:", targets)
+            # print("layer", module_    def["type"], "\toutput size:", x.size())
         yolo_outputs = to_cpu(torch.cat(yolo_outputs, 1))
         #print("========= Detection done =========\n")
         if returnVectors:
@@ -383,21 +375,27 @@ class IDLayer(nn.Module):
 
     def __init__(self):
         super(IDLayer, self).__init__()
-        self.loss_fcn = torch.nn.TripletMarginLoss(margin=1.0, p=2.0, eps=1e-06, swap=False, size_average=None, reduce=None, reduction='none')
+        self.loss_fcn = torch.nn.TripletMarginLoss(margin=200, p=2.0, eps=1e-06, swap=False, size_average=None, reduce=None, reduction='none')
 
-    def forward(self, x):
+    def forward(self, x, targets=None):
         x_dims = x.size()
         # print("x dims:", x_dims)
 
-        if x_dims[0] != 3:
-            print("Diemnsions do not agree for triplet loss!")
-            raise ValueError()
+        if targets is None:
+            return x, 0
+        else:
+            if x_dims[0] != 3:
+                print("Diemnsions do not agree for triplet loss!")
+                raise ValueError()
 
 
-        anchor = x[0, ...].view(1, np.cumprod(x_dims[1:])[-1])
-        positive = x[1, ...].view(1, np.cumprod(x_dims[1:])[-1])    
-        negative = x[2, ...].view(1, np.cumprod(x_dims[1:])[-1])
+            anchor = x[0, ...].view(1, np.cumprod(x_dims[1:])[-1])
+            positive = x[1, ...].view(1, np.cumprod(x_dims[1:])[-1])    
+            negative = x[2, ...].view(1, np.cumprod(x_dims[1:])[-1])
 
-        loss = self.loss_fcn(anchor, positive, negative)    
-        # print("x dims:", x.size())
-        return x, loss
+            # print("Anchor size:", anchor.size())
+
+            loss = self.loss_fcn(anchor, positive, negative)
+            x = x.view(x_dims[0], np.cumprod(x_dims[1:])[-1])    
+            # print("x dims:", x.size())
+            return x, loss

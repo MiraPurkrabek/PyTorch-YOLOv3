@@ -99,7 +99,7 @@ if __name__ == "__main__":
         for batch_i, (_, imgs, targets) in enumerate(dataloader):
             batches_done = len(dataloader) * epoch + batch_i
 
-            print("imgs before:", imgs.size())
+            # print("imgs before:", imgs.size())
 
             imgs = Variable(imgs.to(device))
             print("imgs after:", imgs.size())
