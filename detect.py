@@ -247,12 +247,14 @@ if __name__ == "__main__":
     num_dets = 0
     num_images_for_field = 2
     ID_list = []
+    field_positions = []
 
     print("\nSaving images:")
     # Iterate through images and save plot of detections
     for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
 
         print("({:02d}) Image: '{:s}'".format(img_i, path))
+
 
         prev_num_dets = num_dets
         num_dets = len(detections) if detections is not None else 0
@@ -262,11 +264,22 @@ if __name__ == "__main__":
         # Draw bounding boxes and labels of detections
         if detections is not None:
             img = np.array(Image.open(path))
+            img_h, img_w = img.shape[:2]
 
             # Rescale boxes to original image
             detections = rescale_boxes(detections, opt.img_size, img.shape[:2])
             
-            
+            if (img_i+1) % num_images_for_field == 0:
+                # Flip image
+                detections_fliped = detections.clone()
+                tmp_dets = detections_fliped[:, :2]
+                tmp_dets[:, 0] = img_w - tmp_dets[:, 0]
+                tmp_dets[:, 1] = 2*img_h - tmp_dets[:, 1]
+                field_positions.append(tmp_dets)
+            else:
+                detections_fliped = detections.clone()
+                field_positions.append(detections[:, :2].clone())
+
             # Do some magic with vectors
             #image_vectors = vectors[int(img_i/opt.batch_size)][int(img_i%opt.batch_size)]
             if img_i > 0 and img_i%num_images_for_field == 0:
@@ -275,7 +288,7 @@ if __name__ == "__main__":
                 prev_cls = torch.cat((img_detections[img_i-num_images_for_field:img_i]), 0)
                 #print("prev_cls size", prev_cls.nelement())
                 prev_cls = prev_cls[:, 6] if prev_cls.nelement() != 0 else []
-                prev_pos = torch.cat((img_detections[img_i-num_images_for_field:img_i]), 0)
+                prev_pos = torch.cat((field_positions[img_i-num_images_for_field:img_i]), 0)
                 prev_pos = prev_pos[:, :2] if prev_pos.nelement() != 0 else []
                 #print("img_detections:", len(img_detections), img_detections[0])
                 #print("Prev cls:", prev_cls)
@@ -288,9 +301,9 @@ if __name__ == "__main__":
             
             if len(prev_cls) > 0:
                 #print("Comparing image {:d} with another {:d} vectors".format(img_i, len(prevImage_vectors)))
-                for idx in range(len(detections)):
+                for idx in range(len(detections_fliped)):
                     #orig_idx = vectorNN(image_vectors[idx], prevImage_vectors, selected, detections[idx, 6], prev_cls)
-                    orig_idx = positionTracking(idx, detections[:, :2], detections[:, 6], prev_pos, prev_cls)
+                    orig_idx = positionTracking(idx, detections_fliped[:, :2], detections_fliped[:, 6], prev_pos, prev_cls)
                     #print("idx {:d}, changing cell {:d} ({:d}+{:d})".format(idx, idx + add_cons, idx, add_cons))
                     #print("-----")
                     if orig_idx < 0:
@@ -324,10 +337,8 @@ if __name__ == "__main__":
                         box_w = max(x2 - x1, 20)
                         box_h = max(y2 - y1, 20)
 
-                        height, width = img.shape[:2]
-
                         # Crop image
-                        area = (max(int(x1), 0), max(int(y1), 0), min(int(x2), width), min(int(y2), height))
+                        area = (max(int(x1), 0), max(int(y1), 0), min(int(x2), img_w), min(int(y2), img_h))
                         print("\to Label: %s, Conf: %.5f, ID: %d" % (classes[int(cls_pred)], cls_conf.item(), IDs[det_i + add_cons]))
                         cropped = Image.fromarray(img, 'RGB').crop(area)
                         img_name = "players/p_{:03d}_img_{:03d}.png".format(IDs[det_i + add_cons], img_i)
