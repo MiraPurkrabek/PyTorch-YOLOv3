@@ -375,7 +375,7 @@ class IDLayer(nn.Module):
 
     def __init__(self):
         super(IDLayer, self).__init__()
-        self.loss_fcn = torch.nn.TripletMarginLoss(margin=200, p=2.0, eps=1e-06, swap=False, size_average=None, reduce=None, reduction='none')
+        self.loss_fcn = torch.nn.TripletMarginLoss(margin=20, p=1.0, eps=1e-02, swap=False, size_average=None, reduce=None, reduction='none')
 
     def forward(self, x, targets=None):
         x_dims = x.size()

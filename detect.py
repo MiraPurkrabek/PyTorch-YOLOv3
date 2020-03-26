@@ -122,13 +122,17 @@ if __name__ == "__main__":
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
-    parser.add_argument("--save_images", type=bool, default=False, help="flag if saving images with detections")
+    parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
+    parser.add_argument("--cut_images", type=bool, default=True, help="flag if saving cuted images of detected players")
     opt = parser.parse_args()
     print(opt)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     os.makedirs("output", exist_ok=True)
+
+    if opt.cut_images:
+        os.makedirs("players", exist_ok=True)
 
     # Set up model
     model = Darknet(opt.model_def, img_size=opt.img_size).to(device)
@@ -312,6 +316,25 @@ if __name__ == "__main__":
             ID_list += IDs[add_cons:(add_cons+num_dets)]
 
             # print("IDs to write:", IDs)
+            if opt.cut_images:
+                for det_i in range(len(detections)):
+                    x1, y1, x2, y2, conf, cls_conf, cls_pred, ID = detections[det_i]
+                    if cls_conf.item() > 0.5:
+                    
+                        box_w = max(x2 - x1, 20)
+                        box_h = max(y2 - y1, 20)
+
+                        height, width = img.shape[:2]
+
+                        # Crop image
+                        area = (max(int(x1), 0), max(int(y1), 0), min(int(x2), width), min(int(y2), height))
+                        print("\to Label: %s, Conf: %.5f, ID: %d" % (classes[int(cls_pred)], cls_conf.item(), IDs[det_i + add_cons]))
+                        cropped = Image.fromarray(img, 'RGB').crop(area)
+                        img_name = "players/p_{:03d}_img_{:03d}.png".format(IDs[det_i + add_cons], img_i)
+                        cropped.save(img_name)
+                     
+
+
             if opt.save_images:
                 
                 # Create plot

@@ -26,7 +26,7 @@ from torchvision import transforms
 from torch.autograd import Variable
 import torch.optim as optim
 
-EPOCHS = 2000
+EPOCHS = 1000
 BATCH = 5
 MODEL_DEF = "config/yolov3-siamese.cfg"
 SIZE = 200
@@ -94,10 +94,10 @@ if __name__ == "__main__":
 
     resnet = torch.hub.load('pytorch/vision:v0.5.0', 'resnet18', pretrained=True)
     resnet.to('cuda')
-    loss_fcn = torch.nn.TripletMarginLoss(margin=200, p=2.0, eps=1e-06, swap=False, size_average=None, reduce=None, reduction='none')
+    loss_fcn = torch.nn.TripletMarginLoss(margin=2, p=2.0, eps=1e-02, swap=False, size_average=None, reduce=None, reduction='none')
 
+    model = resnet
     # model = yolo
-    model = yolo
 
     print("===== Model architecture =====")
     print(model)
@@ -117,9 +117,17 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters())
     # optimizer = torch.optim.Adam(resnet.parameters())
 
+    start_time = time.time()
+    sum_loss = 0
+    learning_set = [0, 9]
+    max_len = 100
+    a_indices = list(range(learning_set[0], learning_set[1]+1))
+    p_indices = list(range(learning_set[0], learning_set[1]+1))
+    n_indices = list(range(learning_set[0], learning_set[1]+1))
+
     for epoch in range(EPOCHS):
+        epoch_time = time.time()
         model.train()
-        start_time = time.time()
         # for batch_i, (data, target) in enumerate(load_dataset()):
         for batch_i in range(BATCH):
             # print("Batch {:d}".format(batch_i))
@@ -127,17 +135,17 @@ if __name__ == "__main__":
             # print("data size:", data.size())
             # print("target size:", target.size())
             
-            idx = random.randint(0, 1)
-            a = random.randint(0, 4)
-            p = random.randint(0, 4)
-            while a==p:
-                p = random.randint(0, 4)
-            n = random.randint(0, 4)
+            # idx = random.randint(0, 1)
+            a = a_indices[random.randint(0, len(a_indices)-1)]
+            p = p_indices[random.randint(0, len(a_indices)-1)]
+            while a == p:
+                p = p_indices[random.randint(0, len(a_indices)-1)]
+            n = n_indices[random.randint(0, len(a_indices)-1)]
 
             idx = 0
-            a = 0
-            p = 2
-            n = 3
+            # a = 0
+            # p = 2
+            # n = 3
 
             if idx < 1:
                 anch = player1[a, ..., ..., ...].view(1, 3, SIZE, SIZE)
@@ -148,24 +156,6 @@ if __name__ == "__main__":
                 pos = player2[p, ..., ..., ...].view(1, 3, SIZE, SIZE)
                 neg = player1[n, ..., ..., ...].view(1, 3, SIZE, SIZE)
                 
-            # p1_count = torch.sum(target == 0)
-            # p1_class = data[target == 0, ..., ..., ...]
-            # p2_class = data[target != 0, ..., ..., ...]
-            # # print("target:", target, end="")
-            # if p1_count == 3 or p1_count == 0:
-            #     # print("\tEmpty batch")
-            #     continue
-            # elif p1_count > 1:
-            #     anch = p1_class[0, ..., ..., ...].view(1, 3, SIZE, SIZE)
-            #     pos = p1_class[1, ..., ..., ...].view(1, 3, SIZE, SIZE)
-            #     neg = p2_class[0, ..., ..., ...].view(1, 3, SIZE, SIZE)
-            #     # print("Anchor is class 0")
-            # else:
-            #     anch = p2_class[0, ..., ..., ...].view(1, 3, SIZE, SIZE)
-            #     pos = p2_class[1, ..., ..., ...].view(1, 3, SIZE, SIZE)
-            #     neg = p1_class[0, ..., ..., ...].view(1, 3, SIZE, SIZE)
-            #     # print("Anchor is class 1")
-
             # print("Anchor size:", anch.size())
             imgs = torch.cat([anch, pos, neg], 0)
 
@@ -174,6 +164,9 @@ if __name__ == "__main__":
         
             if model == yolo:
                 loss, outputs = model(imgs, targets=0)
+                anchor = outputs[0, ...].view(1, outputs.size(1))
+                positive = outputs[1, ...].view(1, outputs.size(1))
+                negative = outputs[2, ...].view(1, outputs.size(1))
             else:
                 outputs = model(imgs)
                 anchor = outputs[0, ...].view(1, outputs.size(1))
@@ -183,35 +176,59 @@ if __name__ == "__main__":
             
             loss.backward()
 
-            
-            #   Log progress
-            # print("---")
-            # print("|\tloss {:.4f}".format(loss.item()))
+            # if loss.item() > (sum_loss / (epoch+1)):
+            #     print("Appending new indices, loss: {:0.4f}, avg_loss {:0.4f}".format(loss.item(), sum_loss / (epoch+1)))
+            #     a_indices.append(a)
+            #     p_indices.append(p)
+            #     n_indices.append(n)
 
+            # if len(a_indices) > max_len:
+            #     rand_idx = random.randint(0, len(a_indices)-1)
+            #     a_indices.pop(rand_idx)
+            #     p_indices.pop(rand_idx)
+            #     n_indices.pop(rand_idx)
+
+            # Log progress
+            # print("---")
             # dist_ap = torch.dist(anchor, positive).item()
             # dist_an = torch.dist(anchor, negative).item()
             # dist_pn = torch.dist(positive, negative).item()
-            # print("|\tidx: {:d}, a: {:d}, p: {:d}, n: {:d}".format(idx, a, p, n))
-            # print("|\tD(a,p): {:.1f}, D(a,n): {:.1f}, D(p,n): {:.4f}".format(dist_ap, dist_an, dist_pn))
-            # print("|\tD(a,p) - D(a,n) = {:.1f}".format(dist_ap-dist_an))
+            # # print("|\tidx: {:d}, a: {:d}, p: {:d}, n: {:d}".format(idx, a, p, n))
+            # print("|\tD(a,p): {:.1f}, D(a,n): {:.1f}, loss: {:.4f}".format(dist_ap, dist_an, loss.item()))
+            # # print("|\tD(a,p) - D(a,n) = {:.1f}".format(dist_ap-dist_an))
             # print("---")
 
             if (batch_i+1) % BATCH == 0:
                 # with torch.no_grad():
                 #     for param in model.parameters():
                 #         param -= LR * param.grad
+                # print("Optimizing...")
                 # Accumulates gradient before each step
                 optimizer.step()
                 optimizer.zero_grad()
 
+        epoch_time = datetime.timedelta(seconds=time.time() - epoch_time)
+        sum_loss += loss.item()
+        print("\r\tloss {:.4f}, time: {}".format(loss.item(), epoch_time), end="")
         # print("Epoch {:d}".format(epoch))
 
-        if epoch % 20 == 0:
-            print("================================================= vv epoch {:d} vv ===============================================================".format(epoch))
-            testModel(model, player1[..., ..., ..., ...], player2[..., ..., ..., ...])
-            print("================================================= ^^ epoch {:d} ^^ ===============================================================".format(epoch))
-        #     torch.save(model.state_dict(), "checkpoints/yolov3_id_ckpt_%d.pth" % epoch)
 
-    # p1_encodings = resnet(player1)
-    # p2_encodings = resnet(player2)
-    # testModel(p1_encodings, p2_encodings)
+        if (epoch+1) % 20 == 0:
+            print("\nEpoch {:d}:".format(epoch+1))
+            # print("================================================= vv epoch {:d} vv ===============================================================".format(epoch))
+            # testModel(model, player1[..., ..., ..., ...], player2[..., ..., ..., ...])
+            # print("================================================= ^^ epoch {:d} ^^ ===============================================================".format(epoch))
+            torch.save(model.state_dict(), "checkpoints/yolov3_id_ckpt_%d.pth" % epoch)
+        if (epoch+1) % 50 == 0:
+            print("================================================= vv epoch {:d} vv ===============================================================".format(epoch))
+            testModel(model, player1[learning_set[0]:learning_set[1]+1, ..., ..., ...], player2[learning_set[0]:learning_set[1]+1, ..., ..., ...])
+            print("================================================= ^^ epoch {:d} ^^ ===============================================================".format(epoch))
+            print(a_indices)
+            print(p_indices)
+            print(n_indices)
+
+    testModel(model, player1, player2)
+    
+    overall_time = datetime.timedelta(seconds=time.time() - start_time)
+    print("Overall time: {}".format(overall_time))
+
