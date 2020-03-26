@@ -17,7 +17,7 @@ import argparse
 import random
 import glob
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 import torch
 from torch.utils.data import DataLoader
@@ -27,7 +27,7 @@ from torch.autograd import Variable
 import torch.optim as optim
 
 EPOCHS = 1000
-BATCH = 5
+BATCH = 20
 MODEL_DEF = "config/yolov3-siamese.cfg"
 SIZE = 200
 LR = 1e-4
@@ -82,6 +82,41 @@ def testModel(model, p1_img, p2_img):
             print("{:6.2f}\t".format(torch.dist(p2[p2_i, ...].view(1, vectorLen), p2[p2_j, ...].view(1, vectorLen))), end="")
         print()
 
+def computeClassDist(p1, p2):
+    p1_num = p1.size(0)
+    p2_num = p2.size(0)
+    vectorLen = p1.size(1)
+    d = []
+    for p1_i in range(p1_num):
+        for p2_i in range(p2_num):
+            d.append(torch.dist(p1[p1_i, ...].view(1, vectorLen), p2[p2_i, ...].view(1, vectorLen)))
+    d = torch.stack(d, 0)
+    
+    mx = float(torch.max(d))
+    avg = float(torch.mean(d))
+    md = float(torch.median(d))
+    return [md, avg, mx]
+
+def testmodelShort(model, players):
+    p_enc = []
+    p_size = []
+    inter = []
+    for p in players:
+        p_tmp = model(p)
+        p_enc.append(p_tmp)
+        p_size.append(p.size(0))
+        # Compute distance in classes
+
+    # Compute distances between classes
+    for p_i in range(len(p_enc)):
+        md, avg, mx = computeClassDist(p_enc[p_i], p_enc[p_i])
+        print("Inter class ({:d}):\n\t[{:0.2f}, {:0.2f}, {:0.2f}]".format(p_i, md, avg, mx))
+        for p_j in range(p_i+1, len(p_enc)):
+            md, avg, mx = computeClassDist(p_enc[p_i], p_enc[p_j])
+            print("{:d} vs {:d}:\n\t[{:0.2f}, {:0.2f}, {:0.2f}]".format(p_i, p_j, md, avg, mx))
+        print("=======================================") 
+
+
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -94,7 +129,7 @@ if __name__ == "__main__":
 
     resnet = torch.hub.load('pytorch/vision:v0.5.0', 'resnet18', pretrained=True)
     resnet.to('cuda')
-    loss_fcn = torch.nn.TripletMarginLoss(margin=2, p=2.0, eps=1e-02, swap=False, size_average=None, reduce=None, reduction='none')
+    loss_fcn = torch.nn.TripletMarginLoss(margin=20, p=2.0, eps=1e-02, swap=False, size_average=None, reduce=None, reduction='none')
 
     model = resnet
     # model = yolo
@@ -103,19 +138,30 @@ if __name__ == "__main__":
     print(model)
     print("==============================")
 
-    p1_filelist = glob.glob("data/players/p1/*.jpg")
-    p2_filelist = glob.glob("data/players/p2/*.jpg")
-    player1 = torch.from_numpy(np.array([np.array(Image.open(fname)) for fname in p1_filelist])).type(torch.cuda.FloatTensor)
-    player2 = torch.from_numpy(np.array([np.array(Image.open(fname)) for fname in p2_filelist])).type(torch.cuda.FloatTensor)
-
-    player1 = player1.permute(0, 3, 1 ,2)
-    player2 = player2.permute(0, 3, 1 ,2)
-
-    print("Player 1:", player1.size())
-    print("Player 2:", player2.size())
+    players = []
+    indices = []
+    for i in range(1, 6):
+        file_list = glob.glob("data/players/p{:d}/*.png".format(i))
+        size = (SIZE, SIZE)
+        player = torch.from_numpy(np.array([np.array(ImageOps.fit(Image.open(fname), size, Image.ANTIALIAS)) for fname in file_list])).type(torch.cuda.FloatTensor)
+        # tmp_arr = []
+        # for fname in file_list:
+        #     img = Image.open(fname)
+        #     print("original img shape", img.size)
+        #     img = ImageOps.fit(img, size, Image.ANTIALIAS)
+        #     print("Img shape", img.size)
+        #     img = np.array(img)
+        #     print("Img size", img.size)
+        #     tmp_arr.append(img)
+        # tmp_arr = np.array(tmp_arr)
+        # print(tmp_arr.size)
+        # player = torch.from_numpy(tmp_arr).type(torch.cuda.FloatTensor)
+        player = player.permute(0, 3, 1 ,2)
+        print("Player {:d} size: {}".format(i, player.size()))
+        players.append(player)
+        indices.append(list(range(player.size(0))))
 
     optimizer = torch.optim.Adam(model.parameters())
-    # optimizer = torch.optim.Adam(resnet.parameters())
 
     start_time = time.time()
     sum_loss = 0
@@ -135,26 +181,15 @@ if __name__ == "__main__":
             # print("data size:", data.size())
             # print("target size:", target.size())
             
-            # idx = random.randint(0, 1)
-            a = a_indices[random.randint(0, len(a_indices)-1)]
-            p = p_indices[random.randint(0, len(a_indices)-1)]
-            while a == p:
-                p = p_indices[random.randint(0, len(a_indices)-1)]
-            n = n_indices[random.randint(0, len(a_indices)-1)]
+            idx, idx_neg = random.sample(range(len(players)), 2)
+            a, p = random.sample(range(len(indices[idx])), 2)
+            n = random.sample(range(len(indices[idx_neg])), 1)
+            
+            # print("idx: [{}, {}]\na: {}, p: {}, n: {}".format(idx, idx_neg, a, p, n))
 
-            idx = 0
-            # a = 0
-            # p = 2
-            # n = 3
-
-            if idx < 1:
-                anch = player1[a, ..., ..., ...].view(1, 3, SIZE, SIZE)
-                pos = player1[p, ..., ..., ...].view(1, 3, SIZE, SIZE)
-                neg = player2[n, ..., ..., ...].view(1, 3, SIZE, SIZE)
-            else:
-                anch = player2[a, ..., ..., ...].view(1, 3, SIZE, SIZE)
-                pos = player2[p, ..., ..., ...].view(1, 3, SIZE, SIZE)
-                neg = player1[n, ..., ..., ...].view(1, 3, SIZE, SIZE)
+            anch = players[idx][a, ..., ..., ...].view(1, 3, SIZE, SIZE)
+            pos = players[idx][p, ..., ..., ...].view(1, 3, SIZE, SIZE)
+            neg = players[idx_neg][n, ..., ..., ...].view(1, 3, SIZE, SIZE)
                 
             # print("Anchor size:", anch.size())
             imgs = torch.cat([anch, pos, neg], 0)
@@ -198,36 +233,38 @@ if __name__ == "__main__":
             # # print("|\tD(a,p) - D(a,n) = {:.1f}".format(dist_ap-dist_an))
             # print("---")
 
-            if (batch_i+1) % BATCH == 0:
+            # if (batch_i+1) % BATCH == 0:
                 # with torch.no_grad():
                 #     for param in model.parameters():
                 #         param -= LR * param.grad
                 # print("Optimizing...")
                 # Accumulates gradient before each step
-                optimizer.step()
-                optimizer.zero_grad()
+        optimizer.step()
+        optimizer.zero_grad()
 
         epoch_time = datetime.timedelta(seconds=time.time() - epoch_time)
         sum_loss += loss.item()
-        print("\r\tloss {:.4f}, time: {}".format(loss.item(), epoch_time), end="")
+        # print("\r\tloss {:.4f}, time: {}".format(loss.item(), epoch_time), end="")
         # print("Epoch {:d}".format(epoch))
 
 
         if (epoch+1) % 20 == 0:
-            print("\nEpoch {:d}:".format(epoch+1))
+            # print("\nEpoch {:d}:".format(epoch+1))
             # print("================================================= vv epoch {:d} vv ===============================================================".format(epoch))
             # testModel(model, player1[..., ..., ..., ...], player2[..., ..., ..., ...])
             # print("================================================= ^^ epoch {:d} ^^ ===============================================================".format(epoch))
             torch.save(model.state_dict(), "checkpoints/yolov3_id_ckpt_%d.pth" % epoch)
-        if (epoch+1) % 50 == 0:
+        if (epoch) % 50 == 0:
             print("================================================= vv epoch {:d} vv ===============================================================".format(epoch))
-            testModel(model, player1[learning_set[0]:learning_set[1]+1, ..., ..., ...], player2[learning_set[0]:learning_set[1]+1, ..., ..., ...])
+            idx1, idx2 = [0, 1]
+            testModel(model,
+                players[idx1][random.sample(range(len(indices[idx1])), 8), ..., ..., ...],
+                players[idx2][random.sample(range(len(indices[idx2])), 8), ..., ..., ...]
+            )
+            testmodelShort(model, players)
             print("================================================= ^^ epoch {:d} ^^ ===============================================================".format(epoch))
-            print(a_indices)
-            print(p_indices)
-            print(n_indices)
-
-    testModel(model, player1, player2)
+            
+    # testModel(model, player1, player2)
     
     overall_time = datetime.timedelta(seconds=time.time() - start_time)
     print("Overall time: {}".format(overall_time))
