@@ -33,16 +33,16 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 EPOCHS = 200
 BATCH = 1
-NUM_TRAIN_PLAYERS = 5
-NUM_TEST_PLAYERS = 5
-TRAIN = 0.07        # Percentage of training set (including validation)
-USED = 0.7       # Percentage of unused images (to avoid CUDA-out-of-memory error)
+NUM_TRAIN_PLAYERS = 7
+NUM_TEST_PLAYERS = 10
+TRAIN = 0.7        # Percentage of training set (including validation)
+USED = 1       # Percentage of unused images (to avoid CUDA-out-of-memory error)
 MODEL_DEF = "config/yolov3-siamese.cfg"
 SIZE = 224
 LR = 1e-4
 
-TRAIN_PLAYERS = random.sample(range(5), NUM_TRAIN_PLAYERS)
-TEST_PLAYERS = random.sample(range(5), NUM_TEST_PLAYERS)
+TRAIN_PLAYERS = random.sample(range(10), NUM_TRAIN_PLAYERS)
+TEST_PLAYERS = random.sample(range(10), NUM_TEST_PLAYERS)
 
 def load_dataset():
     data_path = 'data/players/'
@@ -129,7 +129,7 @@ def testmodelShort(model, players):
             print("{:d} vs {:d}:\n\t[{:0.2f}, {:0.2f}, {:0.2f}]".format(p_i+1, p_j+1, md, avg, mx))
         print("=======================================") 
 
-def visuzalizePCA(model, players, fname):
+def visualizePCA(model, players, fname):
     markers = [".", "+", "x", "*", "1", "s", "v"]
     leg = ["Player 1", "Player 2", "Player 3", "Player 4", "Player 5", "Player 6", "Player 7", "Player 8"]
     pca = PCA(n_components=2)
@@ -142,13 +142,25 @@ def visuzalizePCA(model, players, fname):
     plt.savefig(fname, format="jpg")
     print("PCA '{}' done!".format(fname))
 
-def visuzalizeLDA(model, players, fname):
-    markers = [".", "+", "x", "*", "1", "s", "v"]
-    leg = ["Player 1", "Player 2", "Player 3", "Player 4", "Player 5", "Player 6", "Player 7", "Player 8"]
+def visualizeLDA(model, players, fname):
+    markers = [".", "+", "x", "*", "s", "v", "^", "p", "D", "1", "2", "3", "4"]
+    markers = [".", ".", ".", ".", ".", "+", "+", "+", "+", "+", "+"]
+    markers_train = ["o", "o", "o", "o", "o", "P", "P", "P", "P", "P", "P"]
+    leg = ["Player 1", "Player 2", "Player 3", "Player 4", "Player 5", "Player 6", "Player 7", "Player 8", "Player 9", "Player 10"]
     
     vectors = []
     num = [p.size(0) for p in players]
-    X = torch.cat([model(p).cpu().detach() for p in players]).numpy()
+    tmp = []
+    for p in players:
+        i = 0
+        while i < p.size(0):
+            e = min(i+50, p.size(0))
+            t = p[i:e, ...]
+            tmp.append(model(t).cpu().detach())
+            i = e
+
+    X = torch.cat(tmp).numpy()
+    # X = torch.cat([model(p).cpu().detach() for p in players]).numpy()
     
     y = []
     for i, n in enumerate(num):
@@ -162,12 +174,18 @@ def visuzalizeLDA(model, players, fname):
     if len(players) > 2:
         s = 0
         for i, n in enumerate(num):
-            plt.scatter(new_X[s:(s+n), 0], new_X[s:(s+n), 1], marker=markers[i])
+            if i in TRAIN_PLAYERS:
+                plt.scatter(new_X[s:(s+n), 0], new_X[s:(s+n), 1], marker=markers_train[i])
+            else:
+                plt.scatter(new_X[s:(s+n), 0], new_X[s:(s+n), 1], marker=markers[i])
             s += n
     else:
         s = 0
         for i, n in enumerate(num):
-            plt.scatter(new_X[s:(s+n)], new_X[s:(s+n)], marker=markers[i])
+            if i in TRAIN_PLAYERS:
+                plt.scatter(new_X[s:(s+n)], new_X[s:(s+n)], marker=markers_train[i])
+            else:
+                plt.scatter(new_X[s:(s+n)], new_X[s:(s+n)], marker=markers[i])
             s += n
         
     plt.legend(leg[:len(players)])
@@ -181,9 +199,10 @@ if __name__ == "__main__":
 
     os.makedirs("output", exist_ok=True)
     os.makedirs("checkpoints", exist_ok=True)
+    os.makedirs("LDA", exist_ok=True)
     for path in glob.glob("PCA_*.jpg"):
         os.remove(path)
-    for path in glob.glob("LDA_*.jpg"):
+    for path in glob.glob("LDA/LDA_epoch_*.jpg"):
         os.remove(path)
 
     # Initiate model
@@ -192,7 +211,7 @@ if __name__ == "__main__":
 
     resnet = torch.hub.load('pytorch/vision:v0.5.0', 'resnet18', pretrained=True)
     resnet.to(device)
-    loss_fcn = torch.nn.TripletMarginLoss(margin=20, p=2.0, eps=1e-02, swap=False, size_average=None, reduce=None, reduction='none')
+    loss_fcn = torch.nn.TripletMarginLoss(margin=100, p=2.0, eps=1e-02, swap=False, size_average=None, reduce=None, reduction='none')
 
     model = resnet
     # model = yolo
@@ -212,8 +231,9 @@ if __name__ == "__main__":
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    for i in range(5):
-        file_list = glob.glob("data/players/p{:d}/*.png".format(i+1))
+    for j in range(10):
+        i = j+5 if j > 4 else j
+        file_list = glob.glob("data/players/p{:02d}/*.png".format(i+1))
         player = torch.stack([preprocess(Image.open(fname)) for fname in file_list]).type(torch.cuda.FloatTensor)
         num_used = int(player.size(0) * USED)
         player = player[:num_used, ..., ..., ...]
@@ -224,11 +244,11 @@ if __name__ == "__main__":
         train = player[idx, ..., ..., ...]
         test = player[~idx, ..., ..., ...]
         print("Player {:d}".format(i+1))
-        if i in TRAIN_PLAYERS:
+        if j in TRAIN_PLAYERS:
             print("\ttrain size: {}".format(train.size()))
             players.append(train)
             indices.append(list(range(train.size(0))))
-        if i in TEST_PLAYERS:
+        if j in TEST_PLAYERS:
             print("\ttest size: {}".format(test.size()))
             test_players.append(test)
 
@@ -241,6 +261,8 @@ if __name__ == "__main__":
     a_indices = list(range(learning_set[0], learning_set[1]+1))
     p_indices = list(range(learning_set[0], learning_set[1]+1))
     n_indices = list(range(learning_set[0], learning_set[1]+1))
+
+    visualizeLDA(model, test_players, "LDA/LDA_prior.jpg")
 
     for epoch in range(EPOCHS):
         epoch_time = time.time()
@@ -318,14 +340,14 @@ if __name__ == "__main__":
         # print("Epoch {:d}".format(epoch))
 
         # print("Epoch {:d}\r".format(epoch), end="")
-        visuzalizeLDA(model, test_players, "LDA_epoch_{:03d}.jpg".format(epoch))
-        # visuzalizePCA(model, players, "PCA_epoch_{:03d}.jpg".format(epoch))
+        # visualizePCA(model, players, "PCA_epoch_{:03d}.jpg".format(epoch))
 
         if (epoch+1) % 20 == 0:
             # print("================================================= vv epoch {:d} vv ===============================================================".format(epoch))
             # testModel(model, player1[..., ..., ..., ...], player2[..., ..., ..., ...])
             # print("================================================= ^^ epoch {:d} ^^ ===============================================================".format(epoch))
             torch.save(model.state_dict(), "checkpoints/yolov3_id_ckpt_%d.pth" % epoch)
+            visualizeLDA(model, test_players, "LDA/LDA_epoch_{:03d}.jpg".format(epoch))
         if (epoch) % 50 == 0:
             # print("---")
             # dist_ap = torch.dist(anchor, positive).item()
@@ -337,15 +359,13 @@ if __name__ == "__main__":
             print("================================================= vv epoch {:d} vv ===============================================================".format(epoch))
             idx1, idx2 = [0, 1]
             num_players = min(8, min(len(indices[idx1]), len(indices[idx2])))
-            testModel(model,
-                players[idx1][random.sample(range(len(indices[idx1])), num_players), ..., ..., ...],
-                players[idx2][random.sample(range(len(indices[idx2])), num_players), ..., ..., ...]
-                # players[idx1][:num_players, ..., ..., ...],
-                # players[idx2][:num_players, ..., ..., ...]
-            )
-            testmodelShort(model, players)
-            visuzalizeLDA(model, players, "LDA_epoch_{:03d}.jpg".format(epoch))
-            # visuzalizePCA(model, players, "PCA_epoch_{:03d}.jpg".format(epoch))
+            # testModel(model,
+            #     players[idx1][random.sample(range(len(indices[idx1])), num_players), ..., ..., ...],
+            #     players[idx2][random.sample(range(len(indices[idx2])), num_players), ..., ..., ...]
+            # )
+            # testmodelShort(model, players)
+            # visualizeLDA(model, players, "LDA/LDA_epoch_{:03d}.jpg".format(epoch))
+            # visualizePCA(model, players, "PCA_epoch_{:03d}.jpg".format(epoch))
             
             epoch_time = datetime.timedelta(seconds=time.time() - epoch_time)
             elapsed_time = datetime.timedelta(seconds=time.time() - start_time)
@@ -358,14 +378,14 @@ if __name__ == "__main__":
     training_time = datetime.timedelta(seconds=time.time() - start_time)
     print("Training time: {}".format(training_time))
 
-    testmodelShort(model, players)
-    visuzalizeLDA(model, players, "LDA_final.jpg")
-    # visuzalizePCA(model, players, "PCA_final.jpg")
+    # testmodelShort(model, players)
+    visualizeLDA(model, players, "LDA/LDA_final.jpg")
+    # visualizePCA(model, players, "PCA_final.jpg")
     
     print("================================================= Test set ===============================================================")
-    testmodelShort(model, test_players)
-    visuzalizeLDA(model, test_players, "LDA_test_set.jpg")
-    # visuzalizePCA(model, test_players, "PCA_test_set.jpg")
+    # testmodelShort(model, test_players)
+    visualizeLDA(model, test_players, "LDA/LDA_test_set.jpg")
+    # visualizePCA(model, test_players, "PCA_test_set.jpg")
     print("================================================= Test set ===============================================================")
     
     overall_time = datetime.timedelta(seconds=time.time() - start_time)
