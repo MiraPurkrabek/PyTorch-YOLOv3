@@ -29,6 +29,7 @@ import torch.optim as optim
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+import pickle
 
 
 EPOCHS = 200
@@ -142,7 +143,7 @@ def visualizePCA(model, players, fname):
     plt.savefig(fname, format="jpg")
     print("PCA '{}' done!".format(fname))
 
-def visualizeLDA(model, players, fname):
+def visualizeLDA(model, players, fname, save=False):
     markers = [".", "+", "x", "*", "s", "v", "^", "p", "D", "1", "2", "3", "4"]
     markers = [".", ".", ".", ".", ".", "+", "+", "+", "+", "+", "+"]
     markers_train = ["o", "o", "o", "o", "o", "P", "P", "P", "P", "P", "P"]
@@ -151,13 +152,14 @@ def visualizeLDA(model, players, fname):
     vectors = []
     num = [p.size(0) for p in players]
     tmp = []
-    for p in players:
-        i = 0
-        while i < p.size(0):
-            e = min(i+50, p.size(0))
-            t = p[i:e, ...]
-            tmp.append(model(t).cpu().detach())
-            i = e
+    with torch.no_grad():
+        for p in players:
+            i = 0
+            while i < p.size(0):
+                e = min(i+50, p.size(0))
+                t = p[i:e, ...]
+                tmp.append(model(t).cpu().detach())
+                i = e
 
     X = torch.cat(tmp).numpy()
     # X = torch.cat([model(p).cpu().detach() for p in players]).numpy()
@@ -187,7 +189,11 @@ def visualizeLDA(model, players, fname):
             else:
                 plt.scatter(new_X[s:(s+n)], new_X[s:(s+n)], marker=markers[i])
             s += n
-        
+
+    # save the model to disk
+    if save:
+        pickle.dump(lda, open("LDA_model.sav", 'wb'))
+
     plt.legend(leg[:len(players)])
     plt.savefig(fname, format="jpg")
 
@@ -224,7 +230,7 @@ if __name__ == "__main__":
     test_players = []
     indices = []
     
-    preprocess = preprocess = transforms.Compose([
+    preprocess = transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(SIZE),
         transforms.ToTensor(),
@@ -384,7 +390,7 @@ if __name__ == "__main__":
     
     print("================================================= Test set ===============================================================")
     # testmodelShort(model, test_players)
-    visualizeLDA(model, test_players, "LDA/LDA_test_set.jpg")
+    visualizeLDA(model, test_players, "LDA/LDA_test_set.jpg", save=True)
     # visualizePCA(model, test_players, "PCA_test_set.jpg")
     print("================================================= Test set ===============================================================")
     

@@ -21,6 +21,18 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.ticker import NullLocator
 
+import pickle
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from torchvision import transforms
+from scipy.spatial import distance_matrix, distance
+from scipy.optimize import linear_sum_assignment
+
+def costMatrix(lda1, lda2):
+    m = distance_matrix(lda1, lda2)
+    ret = linear_sum_assignment(m)
+    # print(ret)
+    return m
+
 def vectorDistance(v1, v2):
     if v1.size() == v2.size():
         #print("Comapring same vectors of size", v1.size())
@@ -125,7 +137,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
     parser.add_argument("--cut_images", type=bool, default=True, help="flag if saving cuted images of detected players")
     opt = parser.parse_args()
-    print(opt)
+    # print(opt)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -249,6 +261,28 @@ if __name__ == "__main__":
     ID_list = []
     field_positions = []
 
+    ## Delete model to free memory
+    del model
+
+    # ## Load Resnet18 and LDA for ID tracking
+    # lda = pickle.load(open("LDA_model.sav", 'rb'))
+    # resnet = torch.hub.load('pytorch/vision:v0.5.0', 'resnet18', pretrained=False)
+    # resnet.load_state_dict(torch.load("checkpoints/yolov3_id_ckpt_199.pth"))
+    # resnet.to(device)
+    # resnet.eval()
+    # lda_images = None
+    # prev_lda_images = None
+
+
+    # preprocess = transforms.Compose([
+    #     transforms.Resize(256),
+    #     transforms.CenterCrop(224),
+    #     transforms.ToTensor(),
+    #     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    # ])
+
+    '''
+    
     print("\nSaving images:")
     # Iterate through images and save plot of detections
     for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
@@ -259,7 +293,7 @@ if __name__ == "__main__":
         prev_num_dets = num_dets
         num_dets = len(detections) if detections is not None else 0
         add_cons = ((img_i)%num_images_for_field * prev_num_dets)
-        # print("\tPrevious num_dets: {:d}, current num_dets {:d}, add constant {:d}".format(prev_num_dets, num_dets, add_cons))
+        print("\tPrevious num_dets: {:d}, current num_dets {:d}, add constant {:d}".format(prev_num_dets, num_dets, add_cons))
 
         # Draw bounding boxes and labels of detections
         if detections is not None:
@@ -283,6 +317,7 @@ if __name__ == "__main__":
             # Do some magic with vectors
             #image_vectors = vectors[int(img_i/opt.batch_size)][int(img_i%opt.batch_size)]
             if img_i > 0 and img_i%num_images_for_field == 0:
+                print("============================= Switchig to another frames =============================")
                 #prevImage_vectors = vectors[int( (img_i-1)/opt.batch_size )][int( (img_i-1)%opt.batch_size )]
                 #prevImage_vectors += vectors[int( (img_i-2)/opt.batch_size )][int( (img_i-2)%opt.batch_size )]
                 prev_cls = torch.cat((img_detections[img_i-num_images_for_field:img_i]), 0)
@@ -296,21 +331,23 @@ if __name__ == "__main__":
                 #print("Image {:d}, number of vectors: {:d}, previous image {:d}".format(img_i, len(image_vectors), len(prevImage_vectors)))
                 oldIDs = IDs.copy()
                 # ID_list += oldIDs[:prev_num_dets]
+                prev_lda_images = lda_images.copy()
+                lda_images = None
             
             #print("IDs before change:", IDs)
             
-            if len(prev_cls) > 0:
-                #print("Comparing image {:d} with another {:d} vectors".format(img_i, len(prevImage_vectors)))
-                for idx in range(len(detections_fliped)):
+            # if len(prev_cls) > 0:
+                # print("Comparing image {:d} with another {:d} vectors".format(img_i, len(prevImage_vectors)))
+                # for idx in range(len(detections_fliped)):
                     #orig_idx = vectorNN(image_vectors[idx], prevImage_vectors, selected, detections[idx, 6], prev_cls)
-                    orig_idx = positionTracking(idx, detections_fliped[:, :2], detections_fliped[:, 6], prev_pos, prev_cls)
+                    # orig_idx = positionTracking(idx, detections_fliped[:, :2], detections_fliped[:, 6], prev_pos, prev_cls)
                     #print("idx {:d}, changing cell {:d} ({:d}+{:d})".format(idx, idx + add_cons, idx, add_cons))
                     #print("-----")
-                    if orig_idx < 0:
-                        IDs[idx + add_cons] = nextID
-                        nextID += 1
-                    else:
-                        IDs[idx + add_cons] = oldIDs[orig_idx]
+                    # if orig_idx < 0:
+                    #     IDs[idx + add_cons] = nextID
+                    #     nextID += 1
+                    # else:
+                    #     IDs[idx + add_cons] = oldIDs[orig_idx]
                     #    selected[orig_idx] = True
                     #if int(detections[idx, 6]) == 4:
                         #print("idx:, {:d}, res {:d}, prev_cls:".format(idx, orig_idx), prev_cls)
@@ -326,9 +363,10 @@ if __name__ == "__main__":
 
             # Save detections into .txt file
             saveDetections(detections, path, img.shape, opt.conf_thres, IDs, add_cons)
-            ID_list += IDs[add_cons:(add_cons+num_dets)]
+            # ID_list += IDs[add_cons:(add_cons+num_dets)]
 
             # print("IDs to write:", IDs)
+            cropped_images = []
             if opt.cut_images:
                 for det_i in range(len(detections)):
                     x1, y1, x2, y2, conf, cls_conf, cls_pred, ID = detections[det_i]
@@ -339,13 +377,74 @@ if __name__ == "__main__":
 
                         # Crop image
                         area = (max(int(x1), 0), max(int(y1), 0), min(int(x2), img_w), min(int(y2), img_h))
-                        print("\to Label: %s, Conf: %.5f, ID: %d" % (classes[int(cls_pred)], cls_conf.item(), IDs[det_i + add_cons]))
                         cropped = Image.fromarray(img, 'RGB').crop(area)
-                        img_name = "players/p_{:03d}_img_{:03d}.png".format(IDs[det_i + add_cons], img_i)
-                        cropped.save(img_name)
-                     
+                        # print("\to Label: %s, Conf: %.5f, ID: %d" % (classes[int(cls_pred)], cls_conf.item(), IDs[det_i + add_cons]))
+                        # img_name = "players/p_{:03d}_img_{:03d}.png".format(IDs[det_i + add_cons], img_i)
+                        # cropped.save(img_name)
 
+                        # Crop rescale, normalize
+                        preprocess = transforms.Compose([
+                            transforms.Resize(256),
+                            transforms.CenterCrop(224),
+                            transforms.ToTensor(),
+                            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                        ])
+                        tmp_img = preprocess(cropped).type(torch.cuda.FloatTensor)
+                        cropped_images.append(tmp_img)
 
+                # print("cropped len before resnet:", len(cropped_images))
+                embed = resnet(torch.stack(cropped_images).to(device))
+                # print("Embedding len after resnet:", embed.size())
+                lda_images_tmp = lda.transform(embed.detach().to('cpu'))
+
+                # print("lda len after LDA:", lda_images_tmp.shape)
+
+                if lda_images is not None:
+                    lda_images = np.concatenate([lda_images, lda_images_tmp], axis=0)
+                else:
+                    lda_images = lda_images_tmp
+
+                # print("lda len after stack:", lda_images.shape)
+            
+            if (img_i) % num_images_for_field and img_i > 0:
+                markers = [".", "+", "x", "*", "1", "2"]
+                markers = [".", ".", ".", ".", ".", "."]
+                # Plot images in LDA space
+                plt.clf()
+                # plt.xlim(-100, 150)
+                # plt.ylim(-100, 150)
+                for i in range(lda_images.shape[0]):
+                    idx = int(detections[min(i, len(detections)-1)][6])
+                    # print(idx)
+                    # plt.scatter(lda_images[i, 0], lda_images[i, 1])
+                    # print("{:d}, {:s}, [{:.2f}, {:.2f}]".format(idx, markers[idx], lda_images[i, 0], lda_images[i, 1]))
+                    plt.scatter(lda_images[i, 0], lda_images[i, 1], marker=markers[idx], c="r")
+                if prev_lda_images is not None:
+                    # print("prev_lda len after stack:", prev_lda_images.shape)
+                    for i in range(prev_lda_images.shape[0]):
+                        idx = int(prev_cls[i])
+                        # print("{:d}, {:s}, [{:.2f}, {:.2f}]".format(idx, markers[idx], prev_lda_images[i, 0], prev_lda_images[i, 1]))
+                        plt.scatter(prev_lda_images[i, 0], prev_lda_images[i, 1], marker=markers[idx], c="b")
+                    # print("By LDA:")
+                    cm = costMatrix(lda_images, prev_lda_images)
+                    # print("By position:")
+                    d1 = torch.cat(field_positions[-2:]).numpy()
+                    d2 = torch.cat(field_positions[-4:-2]).numpy()
+                    # print(d1.shape)
+                    # print(d2.shape)
+                    dm = costMatrix(d1, d2)
+                    print("Matrices shape:", cm.shape, dm.shape)
+                    if cm.shape == dm.shape:
+                        ret = linear_sum_assignment(cm + 10*dm)
+                        ret = linear_sum_assignment(dm)
+                        print("By both:")
+                        print(ret)
+                        IDs = ret[1]
+                # print(field_positions)
+                plt.savefig("tmp/dets_img_{:d}.jpg".format(img_i), format="jpg")
+
+            print("Those IDs are written:")
+            print(IDs)
             if opt.save_images:
                 
                 # Create plot
@@ -367,7 +466,11 @@ if __name__ == "__main__":
 
                     if cls_conf.item() > 0.5:
                     
-                        print("\t+ Label: %s, Conf: %.5f, ID: %d" % (classes[int(cls_pred)], cls_conf.item(), IDs[det_i + add_cons]))
+                        try:
+                            index_ID = IDs[det_i + add_cons]
+                        except IndexError:
+                            index_ID = det_i + add_cons
+                        print("\t+ Label: %s, Conf: %.5f, ID: %d" % (classes[int(cls_pred)], cls_conf.item(), index_ID))
 
                         box_w = max(x2 - x1, 20)
                         box_h = max(y2 - y1, 20)
@@ -388,7 +491,7 @@ if __name__ == "__main__":
                         plt.text(
                             x1,
                             y1,
-                            s="{:d}".format(IDs[det_i + add_cons]),
+                            s="{:d}".format(index_ID),
                             #s="{:.2f}\n{:.2f}".format(conf, cls_conf),
                             #s=classes[int(cls_pred)],
                             color="black",
@@ -409,9 +512,91 @@ if __name__ == "__main__":
             plt.savefig("output/{}.png".format(filename), bbox_inches="tight", pad_inches=0.0)
         
             plt.close()
+    '''
+    
+    import image_classes
+
+    IDs = list(range(30))
+    old_dets = None
+    old_pos = None
+    old_sim = None
+    last_ID = 1
+
+    print("\nSaving images Mira's way:")
+    for img_i in range(0, len(imgs), 2):
+        print("=====================================================================================")
+        print("({:03d}) Images '{:s}' and '{:s}'".format(
+            int(img_i/2),
+            imgs[img_i].split("/")[-1],
+            imgs[img_i+1].split("/")[-1]
+        ))
+        print("-----------------------------------------------")
+        img_A = image_classes.image_with_detections(imgs[img_i], img_detections[img_i], False)
+        img_B = image_classes.image_with_detections(imgs[img_i+1], img_detections[img_i+1], True)
+
+        pos = img_A.get_positions_list() + img_B.get_positions_list()
+        sim = img_A.get_LDA_list() + img_B.get_LDA_list()
+        dets = img_A.dets + img_B.dets
+
+        # Assign IDs
+        if old_pos:
+            dist_mat = distance_matrix(pos, old_pos)
+            sim_mat = distance_matrix(sim, old_sim)
+            control_dst, dst_asg = linear_sum_assignment(dist_mat)
+            control_sim, sim_asg = linear_sum_assignment(sim_mat)
+            
+            dist_mat[dist_mat>100] = 1000
+            com_mat = sim_mat + dist_mat
+            control_com, com_asg = linear_sum_assignment(com_mat)
+            # print("Distance assignment:\t", dst_asg)
+            # print("Similarity assignment:\t", sim_asg)
+            # print("Control assignment:\t", control_com)
+            # print("Combination assignment:\t", com_asg)
+            for idx in range(len(dets)):
+                if idx in control_com:
+                    cost_a = com_asg[ int(np.where(control_com == idx)[0]) ]
+                    cost = com_mat[idx][cost_a]
+                    dets[idx].ID = old_dets[cost_a].ID
+                    dets[idx].ID_type = None
+                    if cost > 100: 
+                        dets[idx].ID_type = "cst"
+                #     print("Detection {:02d} assigned ({:02d}) by cost ->\t{:05.2f}".format(idx, cost_a, cost))
+                else:
+                #     print("Detection {:02d} not assigned, new ID ({:d}) assigned".format(idx, last_ID))
+                    dets[idx].ID = last_ID
+                    dets[idx].ID_type = "new"
+                    last_ID += 1
+        else:
+            for d in dets:
+                d.ID = last_ID
+                last_ID += 1
+
+        # Save images
+        filename = img_A.path.split("/")[-1].split(".")[0]
+        img_A.draw_detections(filename)
+        print("   --------")
+        filename = img_B.path.split("/")[-1].split(".")[0]
+        img_B.draw_detections(filename)
+
+        # Transfer new dets to old etc.
+        old_dets = dets
+        old_pos = pos
+        old_sim = sim
+        dets = None
+        
 
     IDs_file = open("output/IDs.txt", "w")
     for i in ID_list:
         IDs_file.write("{:d} ".format(i))
     IDs_file.close()
     print("IDs len:", len(ID_list))
+
+    print("Creating Image class")
+    test = image_classes.image_with_detections(imgs[0], img_detections[0], False)
+    print("Image class done!")
+    pos = test.get_positions_list()
+    for p in pos:
+        print(p)
+
+    test.draw_detections("Test_drawing")    
+    
