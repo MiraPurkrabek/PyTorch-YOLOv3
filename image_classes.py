@@ -1,14 +1,7 @@
 import os
-import sys
-import time
-import datetime
 from PIL import Image
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
-from torchvision import datasets
-from torch.autograd import Variable
-
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.ticker import NullLocator
@@ -39,7 +32,7 @@ preprocess = transforms.Compose([
 ## Load Resnet18 and LDA for ID tracking
 lda = pickle.load(open("LDA_model.sav", 'rb'))
 resnet = torch.hub.load('pytorch/vision:v0.5.0', 'resnet18', pretrained=False)
-resnet.load_state_dict(torch.load("checkpoints/yolov3_id_ckpt_199.pth"))
+resnet.load_state_dict(torch.load("checkpoints/resnet18_id.pth"))
 resnet.to('cuda')
 resnet.eval()
 
@@ -50,6 +43,10 @@ class image_with_detections():
         self.h, self.w = self.img.shape[:2]
         self.flip = flip
         self.add_detections(dets)
+        self.thresh = 0.5   # Threshold when accept detection for saving and draving 
+        self.detections_output_folder = os.path.join("output", "detections")
+        self.images_output_folder = os.path.join("output", "images")
+        self.cropped_output_folder = os.path.join("output", "cropped")
         self.colors = [
             [1, 0, 0],
             [0, 0, 1],
@@ -66,19 +63,28 @@ class image_with_detections():
             det.set_position(self.flip)
             self.dets.append(det)   
 
-    def draw_detections(self, filename):
+    def save_detections(self, filename):
+        name = "{}.txt".format(filename)
+        f = open(os.path.join(self.detections_output_folder, name), 'w')
+        for det in self.dets:
+            det_str= det.get_detection_string(self.thresh)
+            if det_str is not None:
+                f.write("{:s}\n".format(det_str))
+        f.close()
+
+    def draw_detections(self, filename, save_cropped=False):
         # Create plot
         plt.figure()
         fig, ax = plt.subplots(1)
         ax.imshow(self.img)
 
         for det in self.dets:
-            if det.cls_conf > 0.5:
+            if det.cls_conf > self.thresh:
                 # print("\t+ Label: %s, Conf: %.5f" % (classes[det.cls_pred], det.cls_conf))
                 if det.ID_type:
-                    print("\t+ Label: %s, Conf: %.5f, ID: %d, ID_type: %s" % (classes[det.cls_pred], det.cls_conf, det.ID, det.ID_type))
+                    print("\t+ Label: {:10s}\t conf: {:.4f}\t ID:{:3d}\t ID_type: {:s}".format(classes[det.cls_pred], det.cls_conf, det.ID, det.ID_type))
                 else:
-                    print("\t+ Label: %s, Conf: %.5f, ID: %d" % (classes[det.cls_pred], det.cls_conf, det.ID))
+                    print("\t+ Label: {:10s}\t conf: {:.4f}\t ID:{:3d}" .format(classes[det.cls_pred], det.cls_conf, det.ID))
 
                 box_w = max(det.w, 20)
                 box_h = max(det.h, 20)
@@ -99,11 +105,17 @@ class image_with_detections():
                     verticalalignment="top",
                     bbox={"color": color, "pad": 0},
                 )
+            if save_cropped:
+                name = "p_{:03d}_img_{:s}.png".format(det.ID, filename)
+                path = os.path.join(self.cropped_output_folder, name)
+                det.cropped.save(path)
+
         # Save generated image with detections
         plt.axis("off")
         plt.gca().xaxis.set_major_locator(NullLocator())
         plt.gca().yaxis.set_major_locator(NullLocator())
-        plt.savefig("output/{}.png".format(filename), bbox_inches="tight", pad_inches=0.0)
+        path = os.path.join(self.images_output_folder, "{}.png".format(filename))
+        plt.savefig(path, bbox_inches="tight", pad_inches=0.0)
         plt.close('all')
 
     def get_positions_list(self):
@@ -143,12 +155,12 @@ class detection_with_info():
         area = (max(self.x1, 0), max(self.y1, 0), min(self.x2, self.img_w), min(self.y2, self.img_h))
         # print(self.x1, self.y1, self.x2, self.y2)
         # print(area)
-        cropped = Image.fromarray(img, 'RGB').crop(area)
+        self.cropped = Image.fromarray(img, 'RGB').crop(area)
         # img_name = "players/p_{:03d}_img_{:03d}.png".format(IDs[det_i + add_cons], img_i)
         # cropped.save(img_name)
 
         # Crop rescale, normalize
-        self.img = preprocess(cropped).type(torch.cuda.FloatTensor)
+        self.img = preprocess(self.cropped).type(torch.cuda.FloatTensor)
 
         # Computed info
         self.w = self.x2 - self.x1
@@ -169,3 +181,17 @@ class detection_with_info():
         embed = resnet(self.img.to('cuda').view(1, 3, 224, 224))
         lda_tmp = lda.transform(embed.detach().to('cpu'))
         return [lda_tmp[0][0], lda_tmp[0][1]]
+
+    def get_detection_string(self, thresh=0.5):
+        s = None
+        if self.cls_conf > thresh:
+            s = "{:d} {:f} {:f} {:f} {:f} {:d}".format(
+                self.ID,                            # ID
+                (self.x1 + self.h/2)/self.img_h,    # X coordimate of center, normalized
+                (self.y1 + self.w/2)/self.img_w,    # Y coordinate of center, normalized
+                self.w/self.img_w,                  # BB width, normalized
+                self.h/self.img_h,                  # BB height, normalized
+                self.cls_pred                       # Predicted class
+            )
+        return s
+        
