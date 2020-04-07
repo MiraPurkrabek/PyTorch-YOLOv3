@@ -47,6 +47,7 @@ class image_with_detections():
         self.detections_output_folder = os.path.join("output", "detections")
         self.images_output_folder = os.path.join("output", "images")
         self.cropped_output_folder = os.path.join("output", "cropped")
+        self.field_output_folder = os.path.join("output", "field")
         self.colors = [
             [1, 0, 0],
             [0, 0, 1],
@@ -117,7 +118,42 @@ class image_with_detections():
         path = os.path.join(self.images_output_folder, "{}.png".format(filename))
         plt.savefig(path, bbox_inches="tight", pad_inches=0.0)
         plt.close('all')
+        
+    def draw_positions(self, filename):
+        # Create plot
+        plt.figure()
+        fig, ax = plt.subplots(1)
+        ax.imshow(np.array(Image.open("floorball_field_half.jpg")))
 
+        for det in self.dets:
+            if det.cls_conf > self.thresh:
+
+                real_position = det.get_real_position(self.flip)    
+            
+                color = self.colors[det.cls_pred]
+                # Create a Rectangle patch
+                bbox = patches.Rectangle((real_position[0], real_position[1]), 10, 10, linewidth=2, edgecolor=color, facecolor="none")
+                # Add the bbox to the plot
+                ax.add_patch(bbox)
+                # Add label
+                # plt.text(
+                #     det.x1,
+                #     det.y1,
+                #     # s="",
+                #     s="{:d}_{:s}".format(det.ID, det.ID_type) if det.ID_type else "{:d}".format(det.ID),
+                #     color="black",
+                #     verticalalignment="top",
+                #     bbox={"color": color, "pad": 0},
+                # )
+            
+        # Save generated image with detections
+        plt.axis("off")
+        plt.gca().xaxis.set_major_locator(NullLocator())
+        plt.gca().yaxis.set_major_locator(NullLocator())
+        path = os.path.join(self.field_output_folder, "{}_field.png".format(filename))
+        plt.savefig(path, bbox_inches="tight", pad_inches=0.0)
+        plt.close('all')
+        
     def get_positions_list(self):
         pos = []
         for d in self.dets:
@@ -165,6 +201,8 @@ class detection_with_info():
         # Computed info
         self.w = self.x2 - self.x1
         self.h = self.y2 - self.y1
+        self.center_x = self.x1 + self.w/2
+        self.center_y = self.y1 + self.h/2
         self.position = None
         self.ID = -1
         self.ID_type = None
@@ -186,12 +224,38 @@ class detection_with_info():
         s = None
         if self.cls_conf > thresh:
             s = "{:d} {:f} {:f} {:f} {:f} {:d}".format(
-                self.ID,                            # ID
-                (self.x1 + self.h/2)/self.img_h,    # X coordimate of center, normalized
-                (self.y1 + self.w/2)/self.img_w,    # Y coordinate of center, normalized
-                self.w/self.img_w,                  # BB width, normalized
-                self.h/self.img_h,                  # BB height, normalized
-                self.cls_pred                       # Predicted class
+                self.ID,                      # ID
+                self.center_x/self.img_h,     # X coordimate of center, normalized
+                self.center_y/self.img_w,     # Y coordinate of center, normalized
+                self.w/self.img_w,            # BB width, normalized
+                self.h/self.img_h,            # BB height, normalized
+                self.cls_pred                 # Predicted class
             )
         return s
-        
+
+    def applyHomography(self, H):
+        point = (self.center_x, self.center_y)
+        x = H[0][0] * point[0] + H[0][1] * point[1] + H[0][2]
+        y = H[1][0] * point[0] + H[1][1] * point[1] + H[1][2]
+        third = H[2][0] * point[0] + H[2][1] * point[1] + H[2][2]
+        x = x/third
+        y = y/third
+        return x, y
+
+    def get_real_position(self, flipped):
+        HKL = [
+            [ 5.55486194e-01,  2.66206778e-01, -1.92444124e+02],
+            [-1.03383545e-03,  8.42561443e-01,  8.61799500e+01],
+            [ 5.95202648e-05,  7.93837649e-04,  1.00000000e+00],
+        ]
+        HKP = [
+            [ 4.53835503e-01,  1.78682162e-01, -1.61961600e+02],
+            [-1.35449447e-02,  7.27359939e-01,  7.89639946e+01],
+            [-7.53534064e-05,  6.73472243e-04,  1.00000000e+00],
+        ]
+        H = HKL
+        if flipped:
+            H = HKP
+        # print("Point before {},\tafter {}".format(point, self.applyHomography(H, point)))
+        return self.applyHomography(H)
+

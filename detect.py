@@ -60,6 +60,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
     parser.add_argument("--save_detections", type=bool, default=True, help="flag if saving detections into txt files")
     parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
+    parser.add_argument("--save_field", type=bool, default=True, help="flag if saving images with detections")
     parser.add_argument("--save_cropped", type=bool, default=False, help="flag if saving cropped images of detected players")
     opt = parser.parse_args()
     
@@ -74,6 +75,9 @@ if __name__ == "__main__":
     
     if opt.save_images:
         os.makedirs(os.path.join("output", "images"), exist_ok=True)
+    
+    if opt.save_field:
+        os.makedirs(os.path.join("output", "field"), exist_ok=True)
 
     if opt.save_cropped:
         os.makedirs(os.path.join("output", "cropped"), exist_ok=True)
@@ -198,6 +202,13 @@ if __name__ == "__main__":
             img_A.draw_detections(filenameA, opt.save_cropped)
             print("   --------")
             img_B.draw_detections(filenameB, opt.save_cropped)
+
+        if opt.save_field:
+            print("-----------------------------------------------")
+            print("Saving real positions...")
+            img_A.draw_positions(filenameA)
+            img_B.draw_positions(filenameB)
+
 
         # Transfer new dets to old etc.
         old_dets = dets
