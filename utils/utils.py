@@ -281,7 +281,7 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4, returnIndices
             huge_overlap = bbox_iou(detections[0, :4].unsqueeze(0), detections[:, :4]) > 0.6
             label_match = detections[0, -1] == detections[:, -1]
             # Indices of boxes with lower confidence scores, large IOUs and matching labels
-            #invalid = large_overlap & label_match
+            # invalid = large_overlap & label_match
             invalid = (large_overlap & label_match) | huge_overlap
             weights = detections[invalid, 4:5]
             # Merge overlapping bboxes by order of confidence

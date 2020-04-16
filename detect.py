@@ -60,7 +60,7 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
     parser.add_argument("--save_detections", type=bool, default=True, help="flag if saving detections into txt files")
     parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
-    parser.add_argument("--save_field", type=bool, default=True, help="flag if saving images with detections")
+    parser.add_argument("--save_field", type=bool, default=False, help="flag if saving images with detections")
     parser.add_argument("--save_cropped", type=bool, default=False, help="flag if saving cropped images of detected players")
     opt = parser.parse_args()
     

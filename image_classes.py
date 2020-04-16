@@ -223,13 +223,14 @@ class detection_with_info():
     def get_detection_string(self, thresh=0.5):
         s = None
         if self.cls_conf > thresh:
-            s = "{:d} {:f} {:f} {:f} {:f} {:d}".format(
+            s = "{:d} {:f} {:f} {:f} {:f} {:d} {:f}".format(
                 self.ID,                      # ID
-                self.center_x/self.img_h,     # X coordimate of center, normalized
-                self.center_y/self.img_w,     # Y coordinate of center, normalized
+                self.center_x/self.img_w,     # X coordimate of center, normalized
+                self.center_y/self.img_h,     # Y coordinate of center, normalized
                 self.w/self.img_w,            # BB width, normalized
                 self.h/self.img_h,            # BB height, normalized
-                self.cls_pred                 # Predicted class
+                self.cls_pred,                 # Predicted class
+                self.cls_conf                 # Predicted class confidence
             )
         return s
 
