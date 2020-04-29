@@ -53,12 +53,14 @@ class image_with_detections():
             [0, 0, 1],
             [0, 1, 0],
             [1, 1, 0],
-            [0.5, 0.5, 0.5]
+            [0.5, 0.5, 0.5],
         ]
     
     def add_detections(self, dets):
-        dets = rescale_boxes(dets, 416, self.img.shape[:2])
         self.dets = []
+        if dets is None:
+            return -1
+        dets = rescale_boxes(dets, 416, self.img.shape[:2])
         for d in dets:
             det = detection_with_info(self.img, d)
             det.set_position(self.flip)
@@ -72,6 +74,14 @@ class image_with_detections():
             if det_str is not None:
                 f.write("{:s}\n".format(det_str))
         f.close()
+
+    def get_mot_format(self, img_i):
+        s = ""
+        for det in self.dets:
+            if det.cls_conf > 0.5:
+                s += "{:d},{:s}\n".format(img_i, det.get_mot_format())
+        # print("Returning string:\n{:s}".format(s))
+        return s
 
     def draw_detections(self, filename, save_cropped=False):
         # Create plot
@@ -89,11 +99,13 @@ class image_with_detections():
 
                 box_w = max(det.w, 20)
                 box_h = max(det.h, 20)
+                # box_w = 10
+                # box_h = 10
 
-                #color = bbox_colors[int(np.where(unique_labels == int(cls_pred))[0])]
                 color = self.colors[det.cls_pred]
                 # Create a Rectangle patch
                 bbox = patches.Rectangle((det.x1, det.y1), box_w, box_h, linewidth=2, edgecolor=color, facecolor="none")
+                # bbox = patches.Rectangle((det.center_x, det.center_y), box_w, box_h, linewidth=2, edgecolor=color, facecolor="none")
                 # Add the bbox to the plot
                 ax.add_patch(bbox)
                 # Add label
@@ -102,6 +114,7 @@ class image_with_detections():
                     det.y1,
                     # s="",
                     s="{:d}_{:s}".format(det.ID, det.ID_type) if det.ID_type else "{:d}".format(det.ID),
+                    # s="",
                     color="black",
                     verticalalignment="top",
                     bbox={"color": color, "pad": 0},
@@ -135,16 +148,6 @@ class image_with_detections():
                 bbox = patches.Rectangle((real_position[0], real_position[1]), 10, 10, linewidth=2, edgecolor=color, facecolor="none")
                 # Add the bbox to the plot
                 ax.add_patch(bbox)
-                # Add label
-                # plt.text(
-                #     det.x1,
-                #     det.y1,
-                #     # s="",
-                #     s="{:d}_{:s}".format(det.ID, det.ID_type) if det.ID_type else "{:d}".format(det.ID),
-                #     color="black",
-                #     verticalalignment="top",
-                #     bbox={"color": color, "pad": 0},
-                # )
             
         # Save generated image with detections
         plt.axis("off")
@@ -182,6 +185,8 @@ class detection_with_info():
         self.x2 = float(x2)
         self.y2 = float(y2)
         self.cls_pred = int(cls_pred)
+        if self.cls_pred > 4:
+            self.cls_pred = 4
         self.cls_conf = float(cls_conf)
         self.conf = float(conf)
 
@@ -189,12 +194,8 @@ class detection_with_info():
         # Crop image
         self.img_h, self.img_w = img.shape[:2]
         area = (max(self.x1, 0), max(self.y1, 0), min(self.x2, self.img_w), min(self.y2, self.img_h))
-        # print(self.x1, self.y1, self.x2, self.y2)
-        # print(area)
         self.cropped = Image.fromarray(img, 'RGB').crop(area)
-        # img_name = "players/p_{:03d}_img_{:03d}.png".format(IDs[det_i + add_cons], img_i)
-        # cropped.save(img_name)
-
+        
         # Crop rescale, normalize
         self.img = preprocess(self.cropped).type(torch.cuda.FloatTensor)
 
@@ -218,7 +219,8 @@ class detection_with_info():
     def get_LDA(self):
         embed = resnet(self.img.to('cuda').view(1, 3, 224, 224))
         lda_tmp = lda.transform(embed.detach().to('cpu'))
-        return [lda_tmp[0][0], lda_tmp[0][1]]
+        return embed.detach().to('cpu').tolist()[0]
+        # return [lda_tmp[0][0], lda_tmp[0][1]]
 
     def get_detection_string(self, thresh=0.5):
         s = None
@@ -233,6 +235,23 @@ class detection_with_info():
                 self.cls_conf                 # Predicted class confidence
             )
         return s
+
+    def get_mot_format(self, thresh=0.5):
+        s = ""
+        if self.cls_conf > thresh:
+            s = "{:d},{:.2f},{:.2f},{:.2f},{:.2f},{:.2f},{:d},{:d},{:d}".format(
+                self.ID,                      # ID
+                self.center_x - self.w/2,     # left
+                self.center_y - self.h/2,     # top
+                self.w,                       # BB width
+                self.h,                       # BB height
+                self.cls_conf,                # Predicted class confidence
+                -1,                           # X in 3D
+                -1,                           # Y in 3D
+                -1,                           # Z in 3D
+            )
+        return s
+
 
     def applyHomography(self, H):
         point = (self.center_x, self.center_y)

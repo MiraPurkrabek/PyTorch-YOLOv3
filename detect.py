@@ -46,6 +46,32 @@ def saveDetections(dets, path, size, thresh, IDs, cons):
             f.write("{:d} {:f} {:f} {:f} {:f} {:f}\n".format(IDs[bb_i + cons], cx/size[1], cy/size[0], w/size[1], h/size[0], bb[-2]))
     f.close()
 
+def findNewOrOldDet(det, lost, sim, last_ID):
+    # print("Trying to find new ID for detection number {:d}...".format(idx))
+    tmp_ID = -1
+    min_dist = 9999
+    for key, value in lost.items():
+        d = distance.pdist( [value, sim] )
+        print("\tDistance {} for ID {:d}".format(d, key))
+        if d < min_dist:
+            min_dist = d
+            tmp_ID = key
+    if tmp_ID > -1:
+        # print("Found old ID, assigning...")
+        det.ID_type = "old"
+        det.ID = tmp_ID
+        del lost[key]
+        print("Assigned old ID '{}' with sim {}".format(tmp_ID, min_dist))
+    else:
+        # print("No old ID found, making new one")
+        det.ID = last_ID
+        det.ID_type = "new"
+        print("Assigned new ID '{}'".format(last_ID))
+        last_ID += 1
+    return det, lost, last_ID
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--image_folder", type=str, default="data/samples", help="path to dataset")
@@ -59,8 +85,10 @@ if __name__ == "__main__":
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
     parser.add_argument("--save_detections", type=bool, default=True, help="flag if saving detections into txt files")
+    parser.add_argument("--track", type=bool, default=True, help="flag if run tracking algorithm")
+    parser.add_argument("--save_mot", type=bool, default=True, help="flag if saving detections into txt files")
     parser.add_argument("--save_images", type=bool, default=True, help="flag if saving images with detections")
-    parser.add_argument("--save_field", type=bool, default=False, help="flag if saving images with detections")
+    parser.add_argument("--save_field", type=bool, default=True, help="flag if saving images with detections")
     parser.add_argument("--save_cropped", type=bool, default=False, help="flag if saving cropped images of detected players")
     opt = parser.parse_args()
     
@@ -81,6 +109,8 @@ if __name__ == "__main__":
 
     if opt.save_cropped:
         os.makedirs(os.path.join("output", "cropped"), exist_ok=True)
+
+    start_time = time.time()
 
     # Set up model
     model = Darknet(opt.model_def, img_size=opt.img_size).to(device)
@@ -141,7 +171,12 @@ if __name__ == "__main__":
     old_pos = None
     old_sim = None
     last_ID = 1
+    lost = {}
+    current_IDs = {}
 
+    if opt.save_mot:
+        mot_file = open("output/mot_output.txt", "w")
+    
     print("\nSaving images Mira's way:")
     for img_i in range(0, len(imgs), 2):
         print("=====================================================================================")
@@ -152,42 +187,91 @@ if __name__ == "__main__":
         ))
         img_A = image_classes.image_with_detections(imgs[img_i], img_detections[img_i], False)
         img_B = image_classes.image_with_detections(imgs[img_i+1], img_detections[img_i+1], True)
-
-        pos = img_A.get_positions_list() + img_B.get_positions_list()
-        sim = img_A.get_LDA_list() + img_B.get_LDA_list()
-        dets = img_A.dets + img_B.dets
-
-        # Assign IDs
-        if old_pos:
-            
-            dist_mat = distance_matrix(pos, old_pos)
-            sim_mat = distance_matrix(sim, old_sim)
-            dist_mat[dist_mat>100] = 1000   
-            com_mat = sim_mat + dist_mat
-            control_com, com_asg = linear_sum_assignment(com_mat)
-            
-            for idx in range(len(dets)):
-                if idx in control_com:
-                    cost_a = com_asg[ int(np.where(control_com == idx)[0]) ]
-                    cost = com_mat[idx][cost_a]
-                    dets[idx].ID = old_dets[cost_a].ID
-                    dets[idx].ID_type = None
-                    if cost > 100: 
-                        dets[idx].ID_type = "cst"
-                    # print("Detection {:02d} assigned ({:02d}) by cost ->\t{:05.2f}".format(idx, cost_a, cost))
-                else:
-                    # print("Detection {:02d} not assigned, new ID ({:d}) assigned".format(idx, last_ID))
-                    dets[idx].ID = last_ID
-                    dets[idx].ID_type = "new"
-                    last_ID += 1
-        else:
-            for d in dets:
-                d.ID = last_ID
-                d.ID_type = "new"
-                last_ID += 1
-
         filenameA = img_A.path.split("/")[-1].split(".")[0]
         filenameB = img_B.path.split("/")[-1].split(".")[0]
+
+        # Track
+        if opt.track:
+            pos = img_A.get_positions_list() + img_B.get_positions_list()
+            sim = img_A.get_LDA_list() + img_B.get_LDA_list()
+            dets = img_A.dets + img_B.dets
+
+            # Assign IDs
+            if old_pos:
+                
+                dist_mat = distance_matrix(pos, old_pos)
+                # print(sim)
+                sim_mat = distance_matrix(sim, old_sim)
+                dist_mat[dist_mat>100] = 1000   
+                sim_mat[sim_mat>200] = 900   
+                com_mat = sim_mat + dist_mat
+                # print("dist_mat:")
+                # print(dist_mat)
+                # print("sim_mat:")
+                # print(sim_mat)
+                # com_mat = sim_mat
+                control_com, com_asg = linear_sum_assignment(com_mat)
+                
+                # print("control_com:", control_com)
+                # print("com_asg:", com_asg)
+
+                for idx in range(len(dets)):
+                    if idx in control_com:
+                        cost_a = com_asg[ int(np.where(control_com == idx)[0]) ]
+                        cost = com_mat[idx][cost_a]
+                        
+                        if cost > 1000: 
+                            dets[idx], lost, last_ID = findNewOrOldDet(dets[idx], lost, sim[idx], last_ID)
+                            current_IDs[dets[idx].ID] = idx
+                            # del prev_IDs[dets[idx].ID]
+                        else:
+                            dets[idx].ID = old_dets[cost_a].ID
+                            current_IDs[dets[idx].ID] = idx
+                            # del prev_IDs[dets[idx].ID]
+                            # print("Old idx {} --> idx {}".format(cost_a, idx))
+                        # print("Detection {:02d} assigned (cost_a: {:02d}, ID: {:02d}) by cost ->\t{:.2f} ({:.2f}, {:.2f})".format(
+                            # idx,
+                            # cost_a,
+                            # dets[idx].ID,
+                            # cost,
+                            # dist_mat[idx][cost_a],
+                            # sim_mat[idx][cost_a],
+                            # ))
+                    else:
+                        dets[idx], lost, last_ID = findNewOrOldDet(dets[idx], lost, sim[idx], last_ID)
+                        current_IDs[dets[idx].ID] = idx
+                        # del prev_IDs[dets[idx].ID]
+
+                # Delete all current IDs
+                for key, value in current_IDs.items():
+                    if key in prev_IDs:
+                        del prev_IDs[key
+                        ]
+                
+                for key, value in prev_IDs.items():
+                    print("Loosing ID '{}' on position {}".format(key, value))
+                    lost[key] = old_sim[value]
+                
+                print("Lost IDs:")
+                print(prev_IDs)
+                # print(current_IDs)
+
+
+
+            else:
+                for i, d in enumerate(dets):
+                    d.ID = last_ID
+                    current_IDs[last_ID] = i
+                    d.ID_type = "new"
+                    last_ID += 1
+       
+            # Transfer new dets to old etc.
+            old_dets = dets
+            old_pos = pos
+            old_sim = sim
+            prev_IDs = current_IDs.copy()
+            current_IDs = {}
+            dets = None
         
         # Save detections
         if opt.save_detections:
@@ -203,18 +287,31 @@ if __name__ == "__main__":
             print("   --------")
             img_B.draw_detections(filenameB, opt.save_cropped)
 
+        # Save images of projection to field
         if opt.save_field:
             print("-----------------------------------------------")
             print("Saving real positions...")
             img_A.draw_positions(filenameA)
             img_B.draw_positions(filenameB)
 
+        # Save tracking in MOT format
+        if opt.save_mot:
+            mot_file.write("{:s}".format(img_A.get_mot_format(img_i+1)))
+            mot_file.write("{:s}".format(img_B.get_mot_format(img_i+2)))
 
-        # Transfer new dets to old etc.
-        old_dets = dets
-        old_pos = pos
-        old_sim = sim
-        dets = None
+
+    
+    if opt.save_mot:
+        mot_file.close()
+    
+    time_elapsed = time.time() - start_time
+    inference_time = datetime.timedelta(seconds=time_elapsed)
+    time_per_frame = datetime.timedelta(seconds=time_elapsed/len(imgs))
+    print("Overall time: {}".format(inference_time))
+    print("Number of frames: {:d}".format(len(imgs)))
+    print("Time per frame: {}, fps: {:.1f}".format(time_per_frame, len(imgs)/time_elapsed))
+
+
         
     
     

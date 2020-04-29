@@ -1,4 +1,9 @@
-python3 -W ignore train.py --model_def config/yolov3-custom.cfg --data_config config/dataset.data --pretrained_weights weights/yolov3.weights --batch_size=4
+# CFG='yolov3-custom.cfg'
+# CFG='yolov3-anchors_150.cfg'
+
+CFG='yolov3-4class.cfg'
+
+python3 -W ignore train.py --model_def config/$CFG --data_config config/dataset.data --pretrained_weights weights/yolov3.weights --batch_size=10
 
 retval=$?
 
