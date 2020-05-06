@@ -267,9 +267,9 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4, returnIndices
         class_confs, class_preds = image_pred[:, 5:-1].max(1, keepdim=True)
         
         # Replace low confs. with human detections
-        idxs = (class_confs < 0.7).reshape(-1)
-        class_confs[idxs] = (image_pred[idxs, -1]).reshape(-1, 1) # Replace confidence for human confidence
-        class_preds[idxs] = 4 # Replace class for human
+        # idxs = (class_confs < 0.7).reshape(-1)
+        # class_confs[idxs] = (image_pred[idxs, -1]).reshape(-1, 1) # Replace confidence for human confidence
+        # class_preds[idxs] = 4 # Replace class for human
         
         detections = torch.cat((image_pred[:, :5], class_confs.float(), class_preds.float()), 1)
         #print("Detections size", detections.size())
@@ -282,9 +282,9 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4, returnIndices
             label_match = detections[0, -1] == detections[:, -1]
             not_human = detections[:, -1] != 4
             # Indices of boxes with lower confidence scores, large IOUs and matching labels
-            # invalid = large_overlap & label_match
+            invalid = large_overlap & label_match
             # invalid = (large_overlap & label_match) | (huge_overlap & not_human)
-            invalid = (large_overlap & label_match) | huge_overlap
+            # invalid = (large_overlap & label_match) | huge_overlap
             weights = detections[invalid, 4:5]
             # Merge overlapping bboxes by order of confidence
             detections[0, :4] = (weights * detections[invalid, :4]).sum(0) / weights.sum()
