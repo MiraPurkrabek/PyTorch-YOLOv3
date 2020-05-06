@@ -137,7 +137,8 @@ if __name__ == "__main__":
 
     imgs = []  # Stores image paths
     img_detections = []  # Stores detections for each image index
-    
+    vectors = []
+
     print("\nPerforming object detection:")
     prev_time = time.time()
     for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
@@ -146,9 +147,44 @@ if __name__ == "__main__":
 
         # Get detections
         with torch.no_grad():
-            detections = model(input_imgs)
-            detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            #detections = model(input_imgs)
+            (detections, all_vectors) = model(input_imgs, returnVectors=True)
+            #detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            (detections, indices) = non_max_suppression(detections, opt.conf_thres, opt.nms_thres, returnIndices=True)
             
+        # Reshape vectors to correspond to indices
+        for i in range(len(all_vectors)):
+            #all_vectors[i] = all_vectors[i].reshape(opt.batch_size, int(1024/2**i), int(13*(2**i)*13*(2**i)))
+            # print("vector {:d} resized...".format(i))
+            all_vectors[i] = all_vectors[i].reshape(-1, int(256/2**i), int(52*(2**i)*52*(2**i)))
+            # print("current size {}".format(all_vectors[i].size()))
+
+        # Keep only valid vectors
+        #vectors = [None for _ in range(len(indices))]
+        batch_vectors = []
+        for image_i in range(len(indices)):
+            image_vectors = []
+            # print(indices[image_i])
+            for idx in indices[image_i]:
+                real_idx = int( (int(idx)-1)/3 )
+                if real_idx < 13**2:
+                    anchor = 0
+                elif real_idx < 26**2:
+                    anchor = 1
+                    real_idx -= 13**2
+                else:
+                    real_idx -= (13**2+26**2)
+                    anchor = 0
+                # print("Image {:d}, keeping vector {:d} from anchor {:d}".format(image_i, real_idx, 13*2**(anchor)))
+                image_vectors.append(all_vectors[anchor][image_i, ..., real_idx])
+            #print("Image vectors len:", len(image_vectors))
+            batch_vectors.append(image_vectors)
+            #print("-----")
+        
+        #print("Batch vectors len:", len(batch_vectors))
+        vectors.append(batch_vectors)
+        
+
         # Log progress
         current_time = time.time()
         inference_time = datetime.timedelta(seconds=current_time - prev_time)
@@ -159,6 +195,8 @@ if __name__ == "__main__":
         imgs.extend(img_paths)
         img_detections.extend(detections)
 
+    print("Vectors len: [{:d}, {:d}, {:d}]".format(len(vectors), len(vectors[0]), len(vectors[0][0])))
+    
     ## Delete model to free memory
     print("Deleting YOLO model to free memory...")
     del model
@@ -190,89 +228,41 @@ if __name__ == "__main__":
         filenameA = img_A.path.split("/")[-1].split(".")[0]
         filenameB = img_B.path.split("/")[-1].split(".")[0]
 
+        batch_number = int(img_i / 10)
+        img_number = img_i % 10
+
         # Track
-        if opt.track:
-            pos = img_A.get_positions_list() + img_B.get_positions_list()
-            sim = img_A.get_LDA_list() + img_B.get_LDA_list()
-            dets = img_A.dets + img_B.dets
-
-            # Assign IDs
-            if old_pos:
-                
-                dist_mat = distance_matrix(pos, old_pos)
-                # print(sim)
-                sim_mat = distance_matrix(sim, old_sim)
-                dist_mat[dist_mat>100] = 1000   
-                sim_mat[sim_mat>200] = 900   
-                com_mat = sim_mat + dist_mat
-                # print("dist_mat:")
-                # print(dist_mat)
-                # print("sim_mat:")
-                # print(sim_mat)
-                # com_mat = sim_mat
-                control_com, com_asg = linear_sum_assignment(com_mat)
-                
-                # print("control_com:", control_com)
-                # print("com_asg:", com_asg)
-
-                for idx in range(len(dets)):
-                    if idx in control_com:
-                        cost_a = com_asg[ int(np.where(control_com == idx)[0]) ]
-                        cost = com_mat[idx][cost_a]
-                        
-                        if cost > 1000: 
-                            dets[idx], lost, last_ID = findNewOrOldDet(dets[idx], lost, sim[idx], last_ID)
-                            current_IDs[dets[idx].ID] = idx
-                            # del prev_IDs[dets[idx].ID]
-                        else:
-                            dets[idx].ID = old_dets[cost_a].ID
-                            current_IDs[dets[idx].ID] = idx
-                            # del prev_IDs[dets[idx].ID]
-                            # print("Old idx {} --> idx {}".format(cost_a, idx))
-                        # print("Detection {:02d} assigned (cost_a: {:02d}, ID: {:02d}) by cost ->\t{:.2f} ({:.2f}, {:.2f})".format(
-                            # idx,
-                            # cost_a,
-                            # dets[idx].ID,
-                            # cost,
-                            # dist_mat[idx][cost_a],
-                            # sim_mat[idx][cost_a],
-                            # ))
-                    else:
-                        dets[idx], lost, last_ID = findNewOrOldDet(dets[idx], lost, sim[idx], last_ID)
-                        current_IDs[dets[idx].ID] = idx
-                        # del prev_IDs[dets[idx].ID]
-
-                # Delete all current IDs
-                for key, value in current_IDs.items():
-                    if key in prev_IDs:
-                        del prev_IDs[key
-                        ]
-                
-                for key, value in prev_IDs.items():
-                    print("Loosing ID '{}' on position {}".format(key, value))
-                    lost[key] = old_sim[value]
-                
-                print("Lost IDs:")
-                print(prev_IDs)
-                # print(current_IDs)
-
-
-
-            else:
-                for i, d in enumerate(dets):
-                    d.ID = last_ID
-                    current_IDs[last_ID] = i
-                    d.ID_type = "new"
-                    last_ID += 1
-       
-            # Transfer new dets to old etc.
-            old_dets = dets
-            old_pos = pos
-            old_sim = sim
-            prev_IDs = current_IDs.copy()
-            current_IDs = {}
-            dets = None
+        if img_i == 0:
+            # Init with random number
+            first_id = random.randint(1, len(img_A.dets)+len(img_B.dets)-1)
+            num = first_id
+        else:
+            # Track player by vector
+            # print(vec)
+            curr_vecs = []
+            for v in vectors[batch_number][img_number]:
+                curr_vecs.append(v.cpu().numpy().reshape(1, 256))
+            for v in vectors[batch_number][img_number+1]:
+                curr_vecs.append(v.cpu().numpy().reshape(1, 256))
+            # print(vectors[batch_number][img_number])
+            dst_mat = distance_matrix(vec, np.concatenate(curr_vecs))
+            num = np.argmin(dst_mat)
+            print("Distance matrix", dst_mat)
+            print("Arg min", num)
         
+        l = len(vectors[batch_number][img_number])
+        if num >= l:
+            print("num = {} - {} - 1".format(num, l))
+            num -= l+1
+            print("img_num = {} + 1".format(img_number))
+            img_number += 1
+            img_B.dets[num].cls_pred = 1
+        else:
+            img_A.dets[num].cls_pred = 1
+
+        print("Selected player {} from image {}/{}".format(num, batch_number, img_number))
+        vec = vectors[batch_number][img_number][num].cpu().numpy().reshape(1, 256)
+
         # Save detections
         if opt.save_detections:
             print("-----------------------------------------------")

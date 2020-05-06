@@ -264,9 +264,11 @@ class Darknet(nn.Module):
                 #print("====== Running YOLO layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
                 x, layer_loss = module[0](x, targets, img_dim)
                 loss += layer_loss
-                #if i is 82:
-                yolo_outputs.append(x)
-                vectors.append(layer_outputs[i-2])
+                if i is 106:
+                    vectors.append(layer_outputs[i-2])
+                    yolo_outputs.append(x)
+                # else:
+                #     print(i)
             elif module_def["type"] == "ID":
                 # print("====== Running ID layer ({:d}), len(layer_outputs):{:f} ======".format(i, len(layer_outputs)))
                 x, layer_loss = module[0](x, targets)
